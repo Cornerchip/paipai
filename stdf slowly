@@ -1,0 +1,342 @@
+
+    def after_send(self, dataSource, data):
+        rectype, fields = data
+        print(data,type(data))
+        print(rectype,type(rectype))
+        print(fields,type(fields))
+        # print('--------------------------------------')
+        # First, get lot/wafer ID etc.
+        if rectype == V4.mir:
+            self.tester_nam = str(fields[V4.mir.NODE_NAM])
+            start_t = time.localtime(int(fields[V4.mir.START_T]))
+            self.start_t = str(time.strftime("%Y/%m/%d-%H:%M:%S", start_t))
+            self.job_nam = str(fields[V4.mir.JOB_NAM])
+            self.lot_id = str(fields[V4.mir.LOT_ID])
+            self.exec_type = str(fields[V4.mir.EXEC_TYP])
+
+            setup_t = time.localtime(int(fields[V4.mir.SETUP_T]))
+            self.setup_t = str(time.strftime("%Y/%m/%d-%H:%M:%S", setup_t))
+            self.subLot = str(fields[V4.mir.SBLOT_ID])
+            self.tester_nam = str(fields[V4.mir.NODE_NAM])
+            self.tester_type = str(fields[V4.mir.TSTR_TYP])
+            self.product = str(fields[V4.mir.PART_TYP])
+            self.operator = str(fields[V4.mir.OPER_NAM])
+            self.exec_type = str(fields[V4.mir.EXEC_TYP])
+            self.exec_revision = str(fields[V4.mir.EXEC_VER])
+            self.test_code = str(fields[V4.mir.TEST_COD])
+            self.mode_code = str(fields[V4.mir.MODE_COD])
+            self.temperature = str(fields[V4.mir.TST_TEMP])
+            self.family = str(fields[V4.mir.FAMLY_ID])
+            self.facility = str(fields[V4.mir.FACIL_ID])
+            self.process = str(fields[V4.mir.PROC_ID])
+            self.FreqStep = str(fields[V4.mir.JOB_NAM])
+            self.flow_ID = str(fields[V4.mir.FLOW_ID])
+            self.setup_ID = str(fields[V4.mir.SETUP_ID])
+        if rectype == V4.sdr:
+            self.site_detail = " Head #"+str(fields[V4.sdr.HEAD_NUM])
+            self.site_group = str(fields[V4.sdr.SITE_GRP])
+            self.test_site = str(fields[V4.sdr.SITE_NUM])
+            self.handler_type = str(fields[V4.sdr.HAND_TYP])
+            self.handler_ID = str(fields[V4.sdr.HAND_ID])
+            self.prob_card_ID = str(fields[V4.sdr.CARD_ID])
+            self.lord_board_ID = str(fields[V4.sdr.LOAD_ID])
+            self.DIB_board_ID = str(fields[V4.sdr.DIB_ID])
+
+        if rectype == V4.mrr:
+            finish_t = time.localtime(int(fields[V4.mrr.FINISH_T]))
+            self.finish_t = str(time.strftime("%Y/%m/%d-%H:%M:%S", finish_t))
+        if rectype == V4.wcr:
+            self.wafer_flat = str(fields[V4.wcr.WF_FLAT])
+            self.wafer_center_x = str(fields[V4.wcr.CENTER_X])
+            self.wafer_center_y = str(fields[V4.wcr.CENTER_Y])
+            self.wafer_pos_x = str(fields[V4.wcr.POS_X])
+            self.wafer_pos_y = str(fields[V4.wcr.POS_Y])
+            
+        if rectype == V4.wir:
+            self.wafer_id = str(fields[V4.wir.WAFER_ID])
+            self.DIE_ID = []
+        if rectype == V4.pmr:
+            if self.exec_type == '93000':
+                self.pmr_dict[str(fields[V4.pmr.PMR_INDX])] = str(fields[V4.pmr.CHAN_NAM])
+            else:
+                self.pmr_dict[str(fields[V4.pmr.PMR_INDX])] = str(fields[V4.pmr.LOG_NAM])
+        # Then, yummy parametric results
+        if rectype == V4.pir:
+            # Found BPS and EPS in sample stdf, add 'lastrectype' to overcome it
+            if self.reset_flag or self.lastrectype != rectype:
+                self.reset_flag = False
+                self.site_count = 0
+                self.site_array = []
+                # self.all_test_result_pd = self.all_test_result_pd.append(pd.DataFrame(self.test_result_dict))
+                self.test_result_dict = {'Parameter': [], 'SBIN': [], 'HBIN': [], 'DIE_X': [],
+                                         'DIE_Y': [], 'SITE': [], 'TIME': [], 'TOTAL_TESTS': [],
+                                         'LOT_ID': [], 'WAFER_ID': []}
+
+            self.site_count += 1
+            self.site_array.append(fields[V4.pir.SITE_NUM])
+            self.test_result_dict['SITE'] = self.site_array
+
+            self.same_name_inst_cnt_dict = {}
+            self.cur_inst_name = ""
+            self.pre_inst_name = ""
+        if rectype == V4.bps:
+            self.pgm_nam = str(fields[V4.bps.SEQ_NAME])
+            self.same_name_inst_cnt_dict = {}
+            self.cur_inst_name = ""
+            self.pre_inst_name = ""
+        if rectype == V4.ptr:  # and fields[V4.prr.SITE_NUM]:
+            # get rid of channel number in TName, so that the csv file would not split the sites data into different columns
+            tname = fields[V4.ptr.TEST_TXT]
+            # if tname == "IDDQ_top_AA_Scan_iddq_sub0_Debug VDDCORE_Min":
+            #     print("OK")
+            tnumber = str(fields[V4.ptr.TEST_NUM])
+            if self.ignore_tnum:
+                tnumber = "0"
+
+            tname_list = tname.split(' ')
+            if len(tname_list) == 5:
+                tname_list.pop(2) #remove channel number
+            tname = ' '.join(tname_list) #将一个列表（tname_list）中的所有元素连接成一个字符串，元素之间用空格隔开
+            tname_tnumber = tnumber + '|' + tname #fields[V4.ptr.TEST_TXT]
+
+            # to distinguish same name inst in flow
+            site = str(fields[V4.ptr.SITE_NUM])
+            self.pre_inst_name = self.cur_inst_name
+            self.cur_inst_name = site + '|' + tname_tnumber
+
+            if (self.cur_inst_name != self.pre_inst_name) and (self.pre_inst_name != "") and not(self.cur_inst_name + "_Appeared" in self.pre_inst_name):
+                # pure_inst_pre = self.pre_inst_name.split("|")[1].split()[0]
+                # pure_inst_cur = self.cur_inst_name.split("|")[1].split()[0]
+                # if pure_inst_pre != pure_inst_cur:
+                    if self.cur_inst_name in self.same_name_inst_cnt_dict.keys():
+                        self.same_name_inst_cnt_dict[self.cur_inst_name] += 1
+                        tname_tnumber += "_Appeared" + str(self.same_name_inst_cnt_dict[self.cur_inst_name])
+                        self.cur_inst_name = site + "|" + tname_tnumber
+                    else:
+                        self.same_name_inst_cnt_dict[self.cur_inst_name] = 1
+            elif self.cur_inst_name + "_Appeared" in self.pre_inst_name:
+                tname_tnumber += "_Appeared" + str(self.same_name_inst_cnt_dict[self.cur_inst_name])
+                self.cur_inst_name = site + "|" + tname_tnumber
+
+            # Process the scale unit, but meanless in IG-XL STDF, comment it
+            unit = str(fields[V4.ptr.UNITS])
+            val_scal = fields[V4.ptr.RES_SCAL]
+            # if val_scal == 0:
+            #     unit = unit
+            # elif val_scal == 2:
+            #     unit = '%' + unit
+            # elif val_scal == 3:
+            #     unit = 'm' + unit
+            # elif val_scal == 6:
+            #     unit = 'u' + unit
+            # elif val_scal == 9:
+            #     unit = 'n' + unit
+            # elif val_scal == 12:
+            #     unit = 'p' + unit
+            # elif val_scal == 15:
+            #     unit = 'f' + unit
+            # elif val_scal == -3:
+            #     unit = 'K' + unit
+            # elif val_scal == -6:
+            #     unit = 'M' + unit
+            # elif val_scal == -9:
+            #     unit = 'G' + unit
+            # elif val_scal == -12:
+            #     unit = 'T' + unit
+
+            if not (tname_tnumber in self.tname_tnumber_dict):
+                if (tnumber + '|' + tname) in self.tname_tnumber_dict:
+                    self.tname_tnumber_dict[tname_tnumber] = self.tname_tnumber_dict[tnumber + '|' + tname].replace(tnumber + '|' + tname, tname_tnumber)
+                else:
+                    self.tname_tnumber_dict[tname_tnumber] = tname_tnumber + '|' + \
+                                                             str(fields[V4.ptr.HI_LIMIT]) + '|' + \
+                                                             str(fields[V4.ptr.LO_LIMIT]) + '|' + \
+                                                             unit #str(fields[V4.ptr.UNITS])
+            # Be careful here, Hi/Low limit only stored in first PTR
+            # tname_tnumber = str(fields[V4.ptr.TEST_NUM]) + '|' + fields[V4.ptr.TEST_TXT] + '|' + \
+            #                 str(fields[V4.ptr.HI_LIMIT]) + '|' + str(fields[V4.ptr.LO_LIMIT]) + '|' + \
+            #                 str(fields[V4.ptr.UNITS])
+            current_tname_tnumber = tname_tnumber # tnumber + '|' + tname #fields[V4.ptr.TEST_TXT]
+            full_tname_tnumber = self.tname_tnumber_dict[current_tname_tnumber]
+            if not (full_tname_tnumber in self.test_result_dict):
+                self.test_result_dict[full_tname_tnumber] = [None] * self.site_count
+            else:
+                pass
+                # if len(self.test_result_dict[full_tname_tnumber]) >= self.site_count:
+                #     # print('Duplicate test number found for test: ', tname_tnumber)
+                #     return
+            test_flag = 0
+            for i in range(self.site_count):
+                if fields[V4.ptr.SITE_NUM] == self.test_result_dict['SITE'][i]:
+                    test_flag = fields[V4.ptr.TEST_FLG]
+                    if test_flag == 0:
+                        ptr_result = str(fields[V4.ptr.RESULT])
+                    else:
+                        if test_flag & 0b1 == 1:
+                            # ptr_result = str(fields[V4.ptr.RESULT]) + '(A)'  原代码，要换算，改了
+                            ptr_result = str(fields[V4.ptr.RESULT])
+                        else:
+                            # ptr_result = str(fields[V4.ptr.RESULT]) + '(F)'  原代码，要换算，改了
+                            ptr_result = str(fields[V4.ptr.RESULT])
+                    self.test_result_dict[full_tname_tnumber][i] = ptr_result
+                    break
+
+        # This is multiple-result parametric record for a single limit for all the multiple test results
+        if rectype == V4.mpr:
+            # process tset name and pin name
+            tmp_RSLT_list = fields[V4.mpr.RTN_RSLT]
+            tname = fields[V4.mpr.TEST_TXT]
+
+            key = str(fields[V4.mpr.TEST_NUM]) + "_" + tname
+            if fields[V4.mpr.RTN_INDX] is None:
+                tmp_pin_list = self.mpr_pin_dict[key]
+
+            else:
+                self.mpr_pin_dict[key] = [self.pmr_dict[str(number)] for number in fields[V4.mpr.RTN_INDX]]
+                tmp_pin_list = self.mpr_pin_dict[key]
+
+            # Process the scale unit, but meanless in IG-XL STDF, comment it
+            unit = str(fields[V4.mpr.UNITS])
+            # val_scal = fields[V4.mpr.RES_SCAL]
+            # if val_scal == 0:
+            #     unit = unit
+            # elif val_scal == 2:
+            #     unit = '%' + unit
+            # elif val_scal == 3:
+            #     unit = 'm' + unit
+            # elif val_scal == 6:
+            #     unit = 'u' + unit
+            # elif val_scal == 9:
+            #     unit = 'n' + unit
+            # elif val_scal == 12:
+            #     unit = 'p' + unit
+            # elif val_scal == 15:
+            #     unit = 'f' + unit
+            # elif val_scal == -3:
+            #     unit = 'K' + unit
+            # elif val_scal == -6:
+            #     unit = 'M' + unit
+            # elif val_scal == -9:
+            #     unit = 'G' + unit
+            # elif val_scal == -12:
+            #     unit = 'T' + unit
+
+            for i in range(len(tmp_pin_list)):
+                tname_pinname = tname + '@' + tmp_pin_list[i]
+                tname_tnumber = str(fields[V4.mpr.TEST_NUM]) + '|' + tname_pinname
+                if not (tname_tnumber in self.tname_tnumber_dict):
+                    self.tname_tnumber_dict[tname_tnumber] = str(fields[V4.mpr.TEST_NUM]) + '|' + \
+                                                             tname_pinname + '|' + \
+                                                             str(fields[V4.mpr.HI_LIMIT]) + '|' + \
+                                                             str(fields[V4.mpr.LO_LIMIT]) + '|' + \
+                                                             unit
+                current_tname_tnumber = str(fields[V4.mpr.TEST_NUM]) + '|' + tname_pinname
+                full_tname_tnumber = self.tname_tnumber_dict[current_tname_tnumber]
+                if not (full_tname_tnumber in self.test_result_dict):
+                    self.test_result_dict[full_tname_tnumber] = [None] * self.site_count
+                else:
+                    pass
+                    # if len(self.test_result_dict[full_tname_tnumber]) >= self.site_count:
+                    #     # print('Duplicate test number found for test: ', tname_tnumber)
+                    #     return
+
+                for j in range(self.site_count):
+                    if fields[V4.mpr.SITE_NUM] == self.test_result_dict['SITE'][j]:
+                        test_flag = fields[V4.mpr.TEST_FLG]
+                        if test_flag == 0:
+                            try:
+                                mpr_result = str(tmp_RSLT_list[i])
+                            except:
+                                print("OK")
+                        else:
+                            if test_flag & 0b1 == 1:
+                                # mpr_result = str(tmp_RSLT_list[i]) + '(A)'  原代码，要换算，改了
+                                mpr_result = str(tmp_RSLT_list[i])
+                            else:
+                                # mpr_result = str(tmp_RSLT_list[i]) + '(F)'  原代码，要换算，改了
+                                mpr_result = str(tmp_RSLT_list[i])
+                        self.test_result_dict[full_tname_tnumber][j] = mpr_result
+
+        # This is the functional test results
+        if rectype == V4.ftr:
+            tname_tnumber = str(fields[V4.ftr.TEST_NUM]) + '|' + fields[V4.ftr.TEST_TXT] + '|-1|-1|' + \
+                            fields[V4.ftr.VECT_NAM]
+            if not (tname_tnumber in self.test_result_dict):
+                self.test_result_dict[tname_tnumber] = [None] * self.site_count
+            else:
+                pass
+                # if len(self.test_result_dict[tname_tnumber]) >= self.site_count:
+                #     # print('Duplicate test number found for test: ', tname_tnumber)
+                #     return
+            for i in range(self.site_count):
+                if fields[V4.ftr.SITE_NUM] == self.test_result_dict['SITE'][i]:
+                    test_flag = fields[V4.ftr.TEST_FLG]
+                    if test_flag == 0:
+                        ftr_result = '-1'
+                    else:
+                        if test_flag & 0b1 == 1:
+                            ftr_result = '0(A)'
+                        else:
+                            ftr_result = '0(F)'
+
+                    self.test_result_dict[tname_tnumber][i] = ftr_result
+
+        if rectype == V4.eps:
+            self.reset_flag = True
+        if rectype == V4.prr:  # and fields[V4.prr.SITE_NUM]:
+            for i in range(self.site_count):
+                if fields[V4.prr.SITE_NUM] == self.test_result_dict['SITE'][i]:
+                    die_x = fields[V4.prr.X_COORD]
+                    die_y = fields[V4.prr.Y_COORD]
+                    site_num = fields[V4.prr.SITE_NUM]
+                    # part_id = fields[V4.prr.PART_ID]
+                    # part_flg = fields[V4.prr.PART_FLG]
+                    h_bin = fields[V4.prr.HARD_BIN]
+                    s_bin = fields[V4.prr.SOFT_BIN]
+                    test_time = fields[V4.prr.TEST_T]
+                    parameter = 'PID-'+str(fields[V4.prr.PART_ID])
+                    total_test = fields[V4.prr.NUM_TEST]
+                    # To judge the device is retested or not
+                    # die_id = self.pgm_nam + '-' + self.job_nam + '-' + self.lot_id + '-' + str(
+                    #     self.wafer_id) + '-' + str(die_x) + '-' + str(die_y)
+                    # if (part_flg & 0x1) ^ (part_flg & 0x2) == 1 or (die_id in self.DIE_ID):
+                    #     rc = 'Retest'
+                    # else:
+                    #     rc = 'First'
+                    # self.DIE_ID.append(die_id)
+                    # print(self.test_result_dict)
+                    self.test_result_dict['Parameter'].append(parameter)
+                    self.test_result_dict['SBIN'].append(s_bin)
+                    self.test_result_dict['HBIN'].append(h_bin)
+                    self.test_result_dict['DIE_X'].append(die_x)
+                    self.test_result_dict['DIE_Y'].append(die_y)
+                    # self.test_result_dict['SITE'].append(site_num)
+                    self.test_result_dict['TIME'].append(test_time)
+
+                    self.test_result_dict['TOTAL_TESTS'].append(total_test)
+                    self.test_result_dict['LOT_ID'].append(self.lot_id)
+                    # self.test_result_dict['PART_ID'].append(part_id)
+                    # self.test_result_dict['RC'].append(rc)
+                    self.test_result_dict['WAFER_ID'].append(self.wafer_id)
+
+            # Send current part result to all test result pd
+            if fields[V4.prr.SITE_NUM] == self.test_result_dict['SITE'][-1]:
+                # tmp_pd = pd.DataFrame(self.test_result_dict)
+                tmp_pd = pd.DataFrame.from_dict(self.test_result_dict, orient='index').T
+                #orient='index'表示字典的键作为DataFrame的列名，字典的值作为对应列的值
+                #.T：这部分代码的作用是对创建的DataFrame进行转置，即将行和列交换
+                # tmp_pd.transpose()
+                # self.all_test_result_pd = self.all_test_result_pd.append(tmp_pd, sort=False, ignore_index=True)
+                self.all_test_result_pd = pd.concat([self.all_test_result_pd, tmp_pd], sort=False, ignore_index=True)
+                #sort=False：这个参数决定是否对结果进行排序。设置为False，表示不对结果进行排序
+                #ignore_index=True：这个参数决定是否忽略原来的索引。设置为True，表示忽略原来的索引，并重新为结果分配一个索引
+                
+        if rectype == V4.sbr:
+            sbin_num = fields[V4.sbr.SBIN_NUM]
+            sbin_nam = fields[V4.sbr.SBIN_NAM]
+            self.sbin_description[sbin_num] = str(sbin_nam) # str(sbin_num) + ' - ' + str(sbin_nam)
+
+        self.lastrectype = rectype
+        # self.notify_progress_bar.emit(int(self.file.tell()/self.filezise*100))
+        # print(int(self.file.tell()/self.filezise*100))
+

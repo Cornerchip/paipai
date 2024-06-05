@@ -1,0 +1,982 @@
+
+import base64
+import csv
+import datetime
+import ftplib
+import os
+import random
+import shutil
+import socket
+import time
+import tkinter as tk
+from pdb import Restart
+from time import localtime, strftime
+from tkinter import *
+from tkinter import messagebox, ttk
+
+from Crypto.Cipher import AES
+
+computer = socket.gethostname()
+correct = 'str'
+thisdict =	{}
+
+class FtpUtil(object):
+    """
+    FTP客户端工具类
+    常用方法
+    ftp.set_debuglevel(2)  # 打开调试级别2，显示详细信息
+    ftp.connect("IPaddress", "port")  # 连接的ftp sever和端口
+    ftp.login("user", "password")  # 连接的用户名，密码
+    ftp.cwd(pathname)  # 设置FTP当前操作的路径
+    ftp.dir()  # 显示目录下所有目录信息
+    ftp.nlst()  # 获取目录下的文件
+    ftp.mkd(pathname)  # 新建远程目录
+    ftp.pwd()  # 返回当前所在位置
+    ftp.rmd(dirname)  # 删除远程目录
+    ftp.delete(filename)  # 删除远程文件
+    ftp.rename(oldname, newname)  # 将fromname修改名称为toname
+    ftp.storbinaly("STOR filename.txt", file_handel, bufsize)  # 上传目标文件
+    ftp.retrbinary("RETR filename.txt", file_handel, bufsize)  # 下载FTP文件
+    ftp.set_debuglevel(0)  # 关闭调试模式
+    ftp.quit()  # 退出ftp
+    """
+    def __init__(self, host, username, password):
+        self.port = 21
+        self.bufsize = 1024
+        self.conn = self.ftp_connect(host, username, password)
+
+    def ftp_connect(self, host, username, password):
+        """
+        建立连接
+        :param host: 地址 
+        :param username: 用户名 
+        :param password: 密码
+        :return: 
+        """
+        ftp = ftplib.FTP()
+        # ftp.set_debuglevel(2) # 调试级别2 打印详细信息
+        ftp.encoding = 'utf-8' # 防止中文目录报错 GB2312
+        ftp.connect(host, self.port) # 填自己服务的端口号 一般是21
+        ftp.login(username, password)  # 如果匿名登录可以使用空字符串
+        # ftp.set_pasv(False)  # 主动模式
+        # print(ftp.getwelcome()) # 打印欢迎信息
+        return ftp
+
+    def upload_file(self, localpath, remotepath):
+        """
+        上传文件
+        :param localpath: 本地文件全路径
+        :param remotepath: 远程文件全路径
+        :return: 
+        """
+        try:
+            # 从本地上传文件到ftp
+            fp = open(localpath, 'rb')
+            self.conn.storbinary('STOR ' + remotepath, fp, self.bufsize)
+            self.conn.set_debuglevel(0)
+            fp.close()
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
+    def creat_dir(self,path1):
+        try:
+            self.conn.cwd(path1)
+            return True
+        except ftplib.error_perm:
+            try:
+                self.conn.mkd(path1)
+            except ftplib.error_perm:
+                print ('U have no authority to make dir')
+        
+    
+    def upload_dir(self, local_dir, remote_dir):
+        """
+        上传整个目录
+        :param local_dir: 本地目录
+        :param remote_dir: 远程目录
+        :return:
+        """
+        if not os.path.isdir(local_dir):
+            print(local_dir, '不是目录')
+            return False
+
+        ftp_path = remote_dir.rstrip('/')
+        try:
+            # 如果上传路径是文件夹，则创建目录
+            self.conn.mkd(ftp_path)
+        except:
+            print(ftp_path, "已存在")
+
+        # 进入本地目录
+        local_files = os.listdir(local_dir)
+        for file in local_files:
+            local_file = os.path.join(local_dir, file)
+            # 如果file本地路径是目录则递归上传文件
+            if os.path.isdir(local_file):
+                self.upload_dir(local_file, ftp_path + "/" + file)
+            # 如果file本地路径是文件则直接上传文件
+            else:
+                self.upload_file(local_file, ftp_path + "/" + file)
+
+    def download_file(self, remotepath, localpath):
+        """
+        下载ftp文件
+        :param remotepath: 远程文件全路径
+        :param localpath: 本地文件全路径
+        :return: 
+        """
+        try:
+            # 从ftp下载文件
+            fp = open(localpath, 'wb')
+            self.conn.retrbinary('RETR ' + remotepath, fp.write, self.bufsize)
+            self.conn.set_debuglevel(0)
+            fp.close()
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
+    def download_dir(self, remote_dir, local_dir):
+        """
+        下载整个目录，将 remote_dir 下载到 local_dir。
+        :param local_dir: 本地目录地址
+        :param remote_dir: 远程目录地址
+        :return: 成功标识
+        """
+        try:
+            # 如果本地目录不存在，则创建
+            if not os.path.exists(local_dir):
+                os.makedirs(local_dir)
+
+            remote_dir = remote_dir.rstrip('/')
+            remote_names = self.conn.nlst(remote_dir)
+            for file in remote_names:
+                # 忽略隐藏文件
+                if file not in [".", ".."]:
+                    remote = remote_dir + "/" + file
+                    print("正在下载", remote)
+                    if self.isDir(remote): # 子文件夹递归
+                        self.download_dir(remote, os.path.join(local_dir, file))
+                    else:
+                        self.download_file(remote, os.path.join(local_dir, file))
+            return True
+        except:
+            return False
+
+    def isDir(self, path):
+        """
+        判断是否为目录 并不是很优雅
+        :param path: 路径
+        :return:
+        """
+        try:
+            self.conn.cwd(path)
+            return True
+        except:
+            return False
+
+    def close_conn(self):
+        """
+        关闭连接
+        :return: 
+        """
+        self.conn.quit()
+
+def correct_password():
+    test1 = 'str'
+    for use_passwd in ['7410963.zz','7410963.qq','yy7410963.','7410963.aa']: #密码组合
+        try:
+            ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",use_passwd)
+            with open(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_upload_buffer\upload_config.csv','w',newline='', encoding='utf-8')as file:
+                writer = csv.writer(file)
+                writer.writerow([use_passwd])
+            ftp.upload_file(os.path.join(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_upload_buffer','upload_config.csv'),\
+                os.path.join(r'\tr_temp','CONFIG','upload_config.csv'))
+            os.remove(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_upload_buffer\upload_config.csv')
+            ftp.close_conn()
+            return use_passwd
+        except ftplib.all_errors:
+            pass
+    return test1
+
+f = open(r'\\10.8.84.56\tr_temp\CONFIG\upload_config.csv', mode='r', encoding='utf-8')
+correct=f.read().strip()
+f.close()
+
+try:
+    ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径
+    # correct = use_passwd
+    # print(ftp.isDir(r'/lsmk_temp/RECIPE'))
+except ftplib.all_errors:        
+    correct = correct_password()
+    print(correct)
+            
+
+# correct = '7410963.zz'
+
+            
+package1 = []
+
+for root,dirs,files in os.walk(r'C:\Program Files\VisDynamics\VisDynamicsTray\Package'): 
+    for f in files:
+        package1.append(f[:-4])
+
+# print(package1)
+
+Upload = tk.Tk()
+Upload.title("准备进版，请输入相关信息")  # 弹窗标题
+Upload.geometry('1000x500+200+100')  # 定义窗体的尺寸及位置，格式为('尺寸Xx尺寸Y+位置X+位置Y')
+# Upload.iconphoto(False, tk.PhotoImage(file=r'D:\叶智荃\杂项\ICON\3561839_emoji_emoticon_silly_icon.png'))
+    
+OP_NO_label1 = Label(Upload, text = "上传人:",font=('微软雅黑',14)).place(x=30, y=10, anchor='nw')
+OP_NO_entry1 = tk.Entry(Upload, font=('微软雅黑',14))  
+OP_NO_entry1.place(x=100, y=13, anchor='nw')  
+psw_label1 = Label(Upload, text = "密   码:",font = ('微软雅黑',14)).place(x = 30, y = 45, anchor = 'nw')
+psw_entry1 = Entry(Upload, font=('微软雅黑',14),show='*')
+psw_entry1.place(x=100, y=48, anchor='nw')
+OP_NO_label2 = Label(Upload, text = "验收人:",font=('微软雅黑',14)).place(x=540, y=10, anchor='nw')
+OP_NO_entry2 = tk.Entry(Upload, font=('微软雅黑',14))  
+OP_NO_entry2.place(x=610, y=13, anchor='nw')  
+psw_label2 = Label(Upload, text = "密   码:",font = ('微软雅黑',14)).place(x = 540, y = 45, anchor = 'nw')
+psw_entry2 = Entry(Upload, font=('微软雅黑',14),show='*')
+psw_entry2.place(x=610, y=48, anchor='nw')
+
+horizontal1 =Frame(Upload, bg='black', height=1,width=900)
+horizontal1.place(x=30, y=82)
+changeall_label = Label(Upload, text = "本次进版部分:",font=('微软雅黑',12)).place(x=30, y=83, anchor='nw')
+change0_label = Label(Upload, text = "Handler:",font=('微软雅黑',12)).place(x=70, y=105, anchor='nw')
+chang0_value = StringVar()
+chang0_values = ['Yes','No']
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox11 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=3, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 12), # 字体
+      textvariable=chang0_value, # 通过StringVar设置可改变的值
+      values=chang0_values, # 设置下拉框的选项
+      )
+combobox11.place(x=140, y=108)
+
+change1_label = Label(Upload, text = "GB:",font=('微软雅黑',12)).place(x=240, y=105, anchor='nw')
+chang1_value = StringVar()
+chang1_values = ['Yes','No']
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox11 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=3, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 12), # 字体
+      textvariable=chang1_value, # 通过StringVar设置可改变的值
+      values=chang1_values, # 设置下拉框的选项
+      )
+combobox11.place(x=270, y=108)
+
+change2_label = Label(Upload, text = "IT:",font=('微软雅黑',12)).place(x=370, y=105, anchor='nw')
+chang2_value = StringVar()
+chang2_values = ['Yes','No']
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox2 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=3, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 12), # 字体
+      textvariable=chang2_value, # 通过StringVar设置可改变的值
+      values=chang2_values, # 设置下拉框的选项
+      )
+combobox2.place(x=395, y=108)
+
+change3_label = Label(Upload, text = "IP:",font=('微软雅黑',12)).place(x=495, y=105, anchor='nw')
+chang3_value = StringVar()
+chang3_values = ['Yes','No']
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox3 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=3, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 12), # 字体
+      textvariable=chang3_value, # 通过StringVar设置可改变的值
+      values=chang3_values, # 设置下拉框的选项
+      )
+combobox3.place(x=520, y=108)
+
+change4_label = Label(Upload, text = "Seal:",font=('微软雅黑',12)).place(x=620, y=105, anchor='nw')
+chang4_value = StringVar()
+chang4_values = ['Yes','No']
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox4 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=3, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 12), # 字体
+      textvariable=chang4_value, # 通过StringVar设置可改变的值
+      values=chang4_values, # 设置下拉框的选项
+      )
+combobox4.place(x=660, y=108)
+
+change5_label = Label(Upload, text = "BGA:",font=('微软雅黑',12)).place(x=760, y=105, anchor='nw')
+chang5_value = StringVar()
+chang5_values = ['Yes','No']
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox5 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=3, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 12), # 字体
+      textvariable=chang5_value, # 通过StringVar设置可改变的值
+      values=chang5_values, # 设置下拉框的选项
+      )
+combobox5.place(x=800, y=108)
+
+horizontal2 =Frame(Upload, bg='black', height=1,width=900)
+horizontal2.place(x=30, y=140)
+
+machine_label = Label(Upload, text = "机   台:",font=('微软雅黑',14)).place(x=30, y=145, anchor='nw')
+machine_value = StringVar()
+machine_values = [computer]
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox12 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=12, # 宽度
+      state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 14), # 字体
+      textvariable=machine_value, # 通过StringVar设置可改变的值
+      values=machine_values, # 设置下拉框的选项
+      )
+combobox12.place(x=100, y=148)
+
+recipe_label = Label(Upload, text = "档案名:",font=('微软雅黑',14)).place(x=290, y=145, anchor='nw')
+recipe_value = StringVar()
+recipe_values = package1
+#machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+#machine_entry.place(x=100, y=88, anchor='nw')  
+combobox13 = ttk.Combobox(
+      master=Upload, # 父容器
+      height=10, # 高度,下拉显示的条目数量
+      width=30, # 宽度
+      state='normal', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+      cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+      font=('微软雅黑', 14), # 字体
+      textvariable=recipe_value, # 通过StringVar设置可改变的值
+      values=recipe_values, # 设置下拉框的选项
+      )
+combobox13.place(x=390, y=148)
+
+# recipe_label = Label(Upload, text = "档案名:",font=('微软雅黑',14)).place(x=285, y=85, anchor='nw')
+# recipe_entry = tk.Entry(Upload, font=('微软雅黑',14), width="25")  
+# recipe_entry.place(x=390, y=88, anchor='nw')  
+
+
+upload_cause_label = Label(Upload, text = "进版原因：",font=('微软雅黑',14)).place(x=30, y=180, anchor='nw')
+upload_cause_entry = Entry(Upload, font=('微软雅黑', 14), width="40")
+upload_cause_entry.place(x=125, y=183, anchor='nw')
+
+change_item_label = Label(Upload, text='进版项目', font=('微软雅黑',14)).place(x=30, y=210, anchor='nw')
+#change_parameter_label = Label(Upload, text='进版参数', font=('微软雅黑',14)).place(x=200, y=120, anchor='nw')
+change_Value_label = Label(Upload, text='进版内容', font=('微软雅黑',14)).place(x=400, y=210, anchor='nw')
+
+change_item_entry_1 = Entry(Upload, font=('微软雅黑',14), width="13")
+change_item_entry_1.place(x=30, y=239, anchor = 'nw')
+#change_paramter_entry_1 = Entry(Upload, font=('微软雅黑', 14), width="16").place(x=200, y = 150, anchor='nw')
+change_value_entry_2 = Entry(Upload, font=('微软雅黑', 14), width="60")
+change_value_entry_2.place(x=200, y = 239, anchor='nw')
+
+change_item_entry_3 = Entry(Upload, font=('微软雅黑',14), width="13")
+change_item_entry_3.place(x=30, y=278, anchor = 'nw')
+change_value_entry_4 = Entry(Upload, font=('微软雅黑', 14), width="60")
+change_value_entry_4.place(x=200, y = 278, anchor='nw')
+
+change_item_entry_5 = Entry(Upload, font=('微软雅黑',14), width="13")
+change_item_entry_5.place(x=30, y=317, anchor = 'nw')
+change_value_entry_6 = Entry(Upload, font=('微软雅黑', 14), width="60")
+change_value_entry_6.place(x=200, y = 317, anchor='nw')
+
+change_item_entry_7 = Entry(Upload, font=('微软雅黑',14), width="13")
+change_item_entry_7.place(x=30, y=356, anchor = 'nw')
+change_value_entry_8 = Entry(Upload, font=('微软雅黑', 14), width="60")
+change_value_entry_8.place(x=200, y = 356, anchor='nw')
+
+change_item_entry_9 = Entry(Upload, font=('微软雅黑',14), width="13")
+change_item_entry_9.place(x=30, y=395, anchor = 'nw')
+change_value_entry_10 = Entry(Upload, font=('微软雅黑', 14), width="60")
+change_value_entry_10.place(x=200, y = 395, anchor='nw')
+
+#允许操作名单
+# thisdict =	{
+#   '21L668':"Jkpy3479",
+#   "20K877":"Cmqv3489",
+#   "ADMIN":"23333",
+#   '19K905':'Lth82597',
+#   '18T071':'Mev18633',
+#   '21L120':'Empv2680',
+#   '20K092':'Bkqw2470',
+#   '21M029':'Hnqx3589',
+#   '18T109':'Cnx27256',
+#   '22K998':'Abcd1610',
+#   '20K019':'Cvu62776',
+#   '21K591':'Qfb67398'
+# }
+
+log_file = open(r'\\10.8.84.56\tr_temp\CONFIG\upload_recipe.dat', mode='r', encoding='utf-8')
+log_info=log_file.read().strip()
+# log_file.close()
+row=log_info.split('\n')
+log_file.close()
+# print(row)
+for roooow in row:
+    new = roooow.split(';')
+    # print(new)
+    thisdict[new[0]]=new[1]
+
+# print(thisdict) 
+'''
+AES对称加密算法
+'''
+# 需要补位，str不是16的倍数那就补足为16的倍数
+def add_to_16(value):
+    while len(value) % 16 != 0:
+        value += '\0'
+    return str.encode(value)  # 返回bytes
+# 加密方法
+def encrypt(key, text):
+    aes = AES.new(add_to_16(key), AES.MODE_ECB)  # 初始化加密器
+    encrypt_aes = aes.encrypt(add_to_16(text))  # 先进行aes加密
+    encrypted_text = str(base64.encodebytes(encrypt_aes), encoding='utf-8')  # 执行加密并转码返回bytes
+    return encrypted_text
+# 解密方法
+def decrypt(key, text):
+    aes = AES.new(add_to_16(key), AES.MODE_ECB)  # 初始化加密器
+    base64_decrypted = base64.decodebytes(text.encode(encoding='utf-8'))  # 优先逆向解密base64成bytes
+    decrypted_text = str(aes.decrypt(base64_decrypted), encoding='utf-8').replace('\0', '')  # 执行解密密并转码返回str
+    return decrypted_text
+
+#recipe_list = []  #存放recipe清单列表
+def travel(path,arg2,arg3,arg4,arg5):  # 定义遍历指定路径获取Recipe list函数,arg3本地路径，arg4 nas-temp
+    for root,dirs,files in os.walk(path):
+        #root 表示当前正在访问的文件夹路径
+        #dirs 表示该文件夹下的子目录名list
+        #files 表示该文件夹下的文件list
+        #遍历文件
+        # for f in files:            
+        #     print(os.path.join(root,f))
+        #遍历所有的文件夹
+        # for d in dirs:
+        #     print(os.path.join(root,d))
+        le = len(arg2)
+        for file in files:
+            print(file)
+            if file[0:le] == arg2:
+                if '(' not in file:
+                    shutil.copyfile(os.path.join(root,file),os.path.join(arg3,file)) #复制到本地真实路径
+                    shutil.copyfile(os.path.join(root,file),os.path.join(arg4,file)) #复制到nas-temp
+                    # shutil.copyfile(os.path.join(root,file),os.path.join(arg5,file)) #复制到本地伪装路径
+
+def check(mac,recipe,jishi,C0,C1,C2,C3,C4,C5):
+    
+    thislist = []
+    handlerlist = ['Handler','GB','IT','IP','Sealing','BGA']
+    uploadlist = [C0,C1,C2,C3,C4,C5]
+    x = 0
+    while x < 6:
+        if uploadlist[x] == 'Yes':
+            print(handlerlist[x])
+            dress_goal1 = os.path.join(r'\\10.8.84.56\tr_temp\RECIPE',mac,handlerlist[x]) #确认temp文件夹
+            thislist = os.listdir(dress_goal1)
+            print(thislist)
+            if thislist ==[] :
+                print(handlerlist[x],'pass')
+                pass
+            else:
+                # print(format_recipe_time1,format_recipe_time2)
+                new_time = int(time.time() / 60) #当前时间
+                print(new_time)
+                shijian = new_time-jishi  #当前时间与上传完成时间差异
+                time.sleep(1)
+                print('重复调用',shijian)
+                if shijian == 4 or shijian == '4':
+                    messagebox.showerror(title='error', message='未检测到档案上传，请反馈叶智荃检查程序')
+                    os._exit()
+                check(mac,recipe,jishi,C0,C1,C2,C3,C4,C5)
+        x = x+1
+    
+    # dress_goal1 = os.path.join(r'\\10.8.84.56\tr_temp\RECIPE',mac,recipe) #确认temp文件夹
+    # dress_goal2 = os.path.join(r'\\10.8.84.56\tr\RECIPE',mac,recipe) #确认PROD文件夹
+    # print(dress_goal1)
+    # if os.path.exists(dress_goal1) and os.path.exists(dress_goal2):
+    #     pass
+    # else:
+    #     new_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #     print(new_time,new_time[14:16])
+    #     shijian = abs(int(new_time[14:16])-jishi)
+    #     time.sleep(1)
+    #     print('重复调用1',shijian)
+    #     if shijian == 4 :
+    #         messagebox.showerror(title='error', message='未检测到档案上传，请反馈叶智荃检查位置壹')
+    #         os._exit()
+    #     check(mac,recipe,jishi)
+        
+    # recipe_time1 = os.path.getmtime(dress_goal1)  #temp  获取的时间数据为时间时间戳，数据类型为float
+    # edit_time_local1 = localtime(recipe_time1)
+    # format_recipe_time1 = strftime("%Y/%m/%d %H:%M:%S", edit_time_local1)
+    
+    # recipe_time2 = os.path.getmtime(dress_goal2)  #PROD   获取的时间数据为时间时间戳，数据类型为float
+    # edit_time_local2 = localtime(recipe_time2)
+    # format_recipe_time2 = strftime("%Y/%m/%d %H:%M:%S", edit_time_local2)
+    
+    # if format_recipe_time2 >= format_recipe_time1 :
+    #     print(format_recipe_time1,format_recipe_time2)
+    #     pass
+    # else:
+    #     print(format_recipe_time1,format_recipe_time2)
+    #     new_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #     print(new_time,new_time[14:16])
+    #     shijian = abs(int(new_time[14:16])-jishi)
+    #     time.sleep(1)
+    #     print('重复调用1',shijian)
+    #     if shijian == 4 :
+    #         messagebox.showerror(title='error', message='未检测到档案上传，请反馈叶智荃检查位置贰')
+    #         os._exit()
+    #     check(mac,recipe,jishi)
+    # thislist = os.listdir(dress_goal1)
+    # print(thislist)
+    # if thislist ==[] :
+    #     pass
+    # else:
+    #     print(format_recipe_time1,format_recipe_time2)
+    #     new_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    #     print(new_time,new_time[14:16])
+    #     shijian = abs(int(new_time[14:16])-jishi)
+    #     time.sleep(1)
+    #     print('重复调用1',shijian)
+    #     if shijian == 4 :
+    #         messagebox.showerror(title='error', message='未检测到档案上传，请反馈叶智荃检查位置叁')
+    #         os._exit()
+    #     check(mac,recipe,jishi)
+    
+  
+def log_creat():   #生成log
+        OPNO1=OP_NO_entry1.get()   
+        OPNO2=OP_NO_entry2.get()   
+        psw1=psw_entry1.get()  
+        mac=machine_value.get()
+        cha0=chang0_value.get()
+        cha1=chang1_value.get()
+        cha2=chang2_value.get()
+        cha3=chang3_value.get()
+        cha4=chang4_value.get()
+        cha5=chang5_value.get()
+        recipe=recipe_value.get()
+        cau=upload_cause_entry.get()
+        cg_item1=change_item_entry_1.get()
+        cg_value1=change_value_entry_2.get()
+        cg_item2=change_item_entry_3.get()
+        cg_value2=change_value_entry_4.get()
+        cg_item3=change_item_entry_5.get()
+        cg_value3=change_value_entry_6.get()
+        cg_item4=change_item_entry_7.get()
+        cg_value4=change_value_entry_8.get()
+        cg_item5=change_item_entry_9.get()
+        cg_value5=change_value_entry_10.get()
+        computer_name1 = socket.gethostname() #取计算机名
+        computer_name2 = computer_name1 + '.csv'
+        log_name = os.path.join(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\upload_log\TR',computer_name2)
+        jishi = int(time.time() / 60)
+        result1 = messagebox.showinfo(title='请稍等', message='请等待180s，将检查上传结果，点击确定开始计时')
+        check(mac,recipe,jishi,cha0,cha1,cha2,cha3,cha4,cha5)
+        
+        for a in range(10):
+            if len(cg_item5) ==0 or len(cg_value5) == 0 :
+                if len(cg_item4) ==0 or len(cg_value4) == 0 :
+                    if len(cg_item3) ==0 or len(cg_value3) == 0 :
+                        if len(cg_item2) ==0 or len(cg_value2) == 0 :
+                            if len(cg_item1) ==0 or len(cg_value1) == 0 :
+                                messagebox.showerror(title='Error', message='请输入进版项目与内容!')
+                                os._exit()
+                                
+                            elif len(cg_item1+cg_value1) > 0:
+                                with open(log_name,'w',newline='', encoding='utf-8')as file:
+                                    writer = csv.writer(file)
+                                    writer.writerow([OPNO1])
+                                    writer.writerow([OPNO2])
+                                    writer.writerow([mac])
+                                    writer.writerow([recipe])
+                                    writer.writerow([cau])
+                                    writer.writerow([cha0])
+                                    writer.writerow([cha1])
+                                    writer.writerow([cha2])
+                                    writer.writerow([cha3])
+                                    writer.writerow([cha4])
+                                    writer.writerow([cha5])
+                                    writer.writerow([cg_item1])
+                                    writer.writerow([cg_value1])
+                                break
+                        elif len(cg_item1+cg_value1) > 0:
+                            with open(log_name,'w',newline='', encoding='utf-8')as file:
+                                writer = csv.writer(file)
+                                writer.writerow([OPNO1])
+                                writer.writerow([OPNO2])
+                                writer.writerow([mac])
+                                writer.writerow([recipe])
+                                writer.writerow([cau])
+                                writer.writerow([cha0])
+                                writer.writerow([cha1])
+                                writer.writerow([cha2])
+                                writer.writerow([cha3])
+                                writer.writerow([cha4])
+                                writer.writerow([cha5])
+                                writer.writerow([cg_item1])
+                                writer.writerow([cg_value1])
+                                writer.writerow([cg_item2])
+                                writer.writerow([cg_value2])
+                            break
+                    elif len(cg_item1+cg_value1) > 0:
+                        with open(log_name,'w',newline='', encoding='utf-8')as file:
+                            writer = csv.writer(file)
+                            writer.writerow([OPNO1])
+                            writer.writerow([OPNO2])
+                            writer.writerow([mac])
+                            writer.writerow([recipe])
+                            writer.writerow([cau])
+                            writer.writerow([cha0])
+                            writer.writerow([cha1])
+                            writer.writerow([cha2])
+                            writer.writerow([cha3])
+                            writer.writerow([cha4])
+                            writer.writerow([cha5])
+                            writer.writerow([cg_item1])
+                            writer.writerow([cg_value1])
+                            writer.writerow([cg_item2])
+                            writer.writerow([cg_value2])
+                            writer.writerow([cg_item3])
+                            writer.writerow([cg_value3])
+                        break
+                elif bool([cg_item3,cg_value3]) is True :
+                    with open(log_name,'w',newline='', encoding='utf-8')as file:
+                        writer = csv.writer(file)
+                        writer.writerow([OPNO1])
+                        writer.writerow([OPNO2])
+                        writer.writerow([mac])
+                        writer.writerow([recipe])
+                        writer.writerow([cau])
+                        writer.writerow([cha0])
+                        writer.writerow([cha1])
+                        writer.writerow([cha2])
+                        writer.writerow([cha3])
+                        writer.writerow([cha4])
+                        writer.writerow([cha5])
+                        writer.writerow([cg_item1])
+                        writer.writerow([cg_value1])
+                        writer.writerow([cg_item2])
+                        writer.writerow([cg_value2])
+                        writer.writerow([cg_item3])
+                        writer.writerow([cg_value3])
+                        writer.writerow([cg_item4])
+                        writer.writerow([cg_value4])
+            elif bool([cg_item4,cg_value4]) is True :
+                with open(log_name,'w',newline='', encoding='utf-8')as file:
+                    writer = csv.writer(file)
+                    writer.writerow([OPNO1])
+                    writer.writerow([OPNO2])
+                    writer.writerow([mac])
+                    writer.writerow([recipe])
+                    writer.writerow([cau])
+                    writer.writerow([cha0])
+                    writer.writerow([cha1])
+                    writer.writerow([cha2])
+                    writer.writerow([cha3])
+                    writer.writerow([cha4])
+                    writer.writerow([cha5])
+                    writer.writerow([cg_item1])
+                    writer.writerow([cg_value1])
+                    writer.writerow([cg_item2])
+                    writer.writerow([cg_value2])
+                    writer.writerow([cg_item3])
+                    writer.writerow([cg_value3])
+                    writer.writerow([cg_item4])
+                    writer.writerow([cg_value4])
+                    writer.writerow([cg_item5])
+                    writer.writerow([cg_value5])
+                break 
+
+
+#弹窗
+#人员输入数据
+#开始上传
+    #分别遍历6个文件夹，遍历后生成log
+    #以输入数据取前N个值为一致为依据，生成list
+    #逐个调用list、替换目标文件夹、备份到nas-temp
+#生成log，逗号间隔，TXT格式
+#弹窗提示上传成功
+def upload_success():
+    OPNO1=OP_NO_entry1.get()
+    OPNO2=OP_NO_entry2.get()
+    psw1=psw_entry1.get()
+    psw2=psw_entry2.get()
+    mac=machine_value.get()
+    cha0=chang0_value.get()
+    cha1=chang1_value.get()
+    cha2=chang2_value.get()
+    cha3=chang3_value.get()
+    cha4=chang4_value.get()        
+    cha5=chang5_value.get()
+    recipe=recipe_value.get()
+    cau=upload_cause_entry.get()
+    cg_item1=change_item_entry_1.get()
+    cg_value1=change_value_entry_2.get()
+    cg_item2=change_item_entry_3.get()
+    cg_value2=change_value_entry_4.get()
+    cg_item3=change_item_entry_5.get()
+    cg_value3=change_value_entry_6.get()
+    cg_item4=change_item_entry_7.get()
+    cg_value4=change_value_entry_8.get()
+    cg_item5=change_item_entry_9.get()
+    cg_value5=change_value_entry_10.get()
+    global correct
+    
+    
+    try:
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径
+        # print(ftp.isDir(r'/lsmk_temp/RECIPE'))
+    except ftplib.all_errors:        
+        messagebox.showerror(title='Error', message='FTP密码错误,请勿一直点击上传！！！call叶智荃修改密码！！！！！')
+        os._exit()
+    
+    
+    psw3 = encrypt(OPNO1,psw1).strip()
+    psw4 = encrypt(OPNO2,psw2).strip()
+    
+    if len(OPNO1) ==0 :
+        messagebox.showerror(title='Error', message='请输入上传人工号!')
+        os._exit()
+    if len(psw1) ==0 :
+        messagebox.showerror(title='Error', message='请输上传人入密码!')
+        os._exit()
+    if OPNO1 not in thisdict:
+        messagebox.showerror(title='Error', message='请确认上传人工号是否正确，是否有权限')
+        os._exit()
+    if thisdict.get(OPNO1) != psw3:
+        messagebox.showerror(title='Error', message='上传人密码错误!')
+        os._exit()
+    if len(OPNO2) ==0 :
+        messagebox.showerror(title='Error', message='请输入验收人工号!')
+        os._exit()
+    if len(psw2) ==0 :
+        messagebox.showerror(title='Error', message='请输入验收人密码!')
+        os._exit()
+    if OPNO2 not in thisdict:
+        messagebox.showerror(title='Error', message='请确认验收人工号是否正确，是否有权限')
+        os._exit()
+    if thisdict.get(OPNO2) != psw4:
+        messagebox.showerror(title='Error', message='验收人密码错误!')
+        os._exit()
+    if OPNO2 == OPNO1:
+        messagebox.showerror(title='Error', message='上传人与验收人不能为同一人')
+        os._exit()
+    if len(cha0) ==0 or len(cha1) ==0 or len(cha2) ==0 or len(cha3) ==0 or len(cha4) ==0 or len(cha5) ==0:
+        messagebox.showerror(title='Error', message='选择进版部分!')
+        os._exit()  
+    
+    if len(mac) ==0 :
+        messagebox.showerror(title='Error', message='请选择机台!')
+        os._exit()   
+    if len(recipe) ==0 :
+        messagebox.showerror(title='Error', message='请输入recipe name!')
+        os._exit()  
+    if str(recipe)[-1:] != '0' :
+        messagebox.showerror(title='Error', message='recipe name异常,请检查后输入!')
+        os._exit()  
+    if len(cau) ==0 :
+        messagebox.showerror(title='Error', message='请输入进版原因!')
+        os._exit()
+    if len(cg_item1) ==0 or len(cg_value1) == 0 or len(OPNO1)==0 or  len(cau)==0:
+        messagebox.showerror(title='Error', message='请输入进版项目与内容!')
+        os._exit()
+    if cha0 == 'Yes'  : #Handler
+        handler_name = recipe+'.pkg'
+        if os.path.exists(os.path.join(r'C:\Program Files\VisDynamics\VisDynamicsTray\Package',handler_name)):
+            if os.path.getsize(os.path.join(r'C:\Program Files\VisDynamics\VisDynamicsTray\Package',handler_name)) < 15000:
+                messagebox.showerror(title='Error', message='该Handler档大小异常，请勿上传!')
+                os._exit()
+        else:
+            messagebox.showerror(title='Error', message='未发现该Handler档，请检查档案名输入是否正确!')
+            os._exit()
+    
+    # if cha1 == 'Yes'  : #GB
+    #     bga_name = recipe+'.dev'
+    #     if os.path.exists(os.path.join(r'Z:\\',bga_name)):
+    #         pass
+    #     else:
+    #         messagebox.showerror(title='Error', message='未发现该GB档，请检查档案名输入是否正确!')
+    #         os._exit()
+    
+    if cha2 == 'Yes'  : #IT
+        bga_name = recipe+'.dev'
+        if os.path.exists(os.path.join(r'Y:\\',bga_name)):
+            with open(r'Y:\\'+recipe+'.ocr')  as f:
+                lines=f.readlines()
+                if  len(lines) >= 2 and  lines[1].strip() == "Enable=true" :
+                   pass
+                else:
+                    messagebox.showerror(title='Error', message='请确认IT OCR 是否打开 !')
+                    os._exit()
+        else:
+            messagebox.showerror(title='Error', message='未发现该InTray档，请检查档案名输入是否正确!')
+            os._exit()
+    
+    if cha3 == 'Yes'  : #IP
+        bga_name = recipe+'.dev'
+        if os.path.exists(os.path.join(r'X:\\',bga_name)):
+            pass
+        else:
+            messagebox.showerror(title='Error', message='未发现该Inpocket档，请检查档案名输入是否正确!')
+            os._exit()
+    
+    if cha4 == 'Yes'  : #Seal
+        bga_name = recipe+'.dev'
+        if os.path.exists(os.path.join(r'U:\\',bga_name)):
+            pass
+        else:
+            messagebox.showerror(title='Error', message='未发现该PostSeal档，请检查档案名输入是否正确!')
+            os._exit()
+    
+    if cha5 == 'Yes'  : #BGA
+        bga_name = recipe+'.bga'
+        if os.path.exists(os.path.join(r'W:\\',bga_name)):
+            pass
+        else:
+            messagebox.showerror(title='Error', message='未发现该3D档，请检查档案名输入是否正确!')
+            os._exit()
+    
+    moss=messagebox.askokcancel(title='即将开始上传', message='检查进版部分，点击确定后开始上传')
+    if moss == True :
+        print('=========================================')
+    elif moss == False:
+        os._exit()
+    
+    if cha0 == 'Yes':  #chang1  Handler
+        travel(r'C:\Program Files\VisDynamics\VisDynamicsTray\Package',recipe,r'D:\production file\R8\Handler',r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_recipe\Handler',r'D:\production  file\R8\Handler') #U:\ Sealing
+        
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径 
+        ftp.creat_dir(os.path.join(r'\tr_temp\RECIPE',computer,'Handler'))
+        #↑创建路径，↓上传档案
+        length = len(recipe)
+        for f_name in os.listdir(r'C:\Program Files\VisDynamics\VisDynamicsTray\Package'):
+            if f_name[0:length] == recipe and '(' not in f_name :            
+                ftp.upload_file(os.path.join(r'C:\Program Files\VisDynamics\VisDynamicsTray\Package',f_name),\
+                os.path.join(r'\tr_temp','RECIPE',computer,'Handler',f_name))
+        ftp.close_conn()
+        
+    
+    if cha1 == 'Yes':  #chang1  GB
+        travel(r'Z:\\',recipe,r'D:\production file\R8\GB',r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_recipe\GB',r'D:\production  file\R8\GB') 
+        
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径 
+        ftp.creat_dir(os.path.join(r'\tr_temp\RECIPE',computer,'GB'))
+        #↑创建路径，↓上传档案
+        length = len(recipe)
+        for f_name in os.listdir(r'Z:\\'):
+            if f_name[0:length] == recipe and '(' not in f_name :            
+                ftp.upload_file(os.path.join(r'Z:\\',f_name),\
+                os.path.join(r'\tr_temp','RECIPE',computer,'GB',f_name))
+        ftp.close_conn()
+        
+        # travel(r'D:\叶智荃\专案\脚本开发\TR\GB',recipe) #Z:\ GangBot
+    
+    if cha2 == 'Yes':  #chang2  IT
+        travel(r'Y:\\',recipe,r'D:\production file\R8\IT',r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_recipe\IT',r'D:\production  file\R8\IT') 
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径 
+        ftp.creat_dir(os.path.join(r'\tr_temp\RECIPE',computer,'IT'))
+        #↑创建路径，↓上传档案
+        length = len(recipe)
+        for f_name in os.listdir(r'Y:\\'):
+            if f_name[0:length] == recipe and '(' not in f_name :            
+                ftp.upload_file(os.path.join(r'Y:\\',f_name),\
+                os.path.join(r'\tr_temp','RECIPE',computer,'IT',f_name))
+        ftp.close_conn()
+        
+     # travel(r'D:\叶智荃\专案\脚本开发\TR\GB',recipe) #Y:\ InTray
+    
+    if cha3 == 'Yes':  #chang3  IP
+        travel(r'X:\\',recipe,r'D:\production file\R8\IP',r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_recipe\IP',r'D:\production  file\R8\IP') 
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径 
+        ftp.creat_dir(os.path.join(r'\tr_temp\RECIPE',computer,'IP'))
+        #↑创建路径，↓上传档案
+        length = len(recipe)
+        for f_name in os.listdir(r'X:\\'):
+            if f_name[0:length] == recipe and '(' not in f_name :            
+                ftp.upload_file(os.path.join(r'X:\\',f_name),\
+                os.path.join(r'\tr_temp','RECIPE',computer,'IP',f_name))
+        ftp.close_conn()
+         
+        # travel(r'D:\叶智荃\专案\脚本开发\TR\GB',recipe) #X:\ InPocket
+    
+    if cha4 == 'Yes':  #chang4  Seal
+        travel(r'U:\\',recipe,r'D:\production file\R8\Sealing',r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_recipe\Seal',r'D:\production  file\R8\Sealing') 
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径 
+        ftp.creat_dir(os.path.join(r'\tr_temp\RECIPE',computer,'Sealing'))
+        #↑创建路径，↓上传档案
+        length = len(recipe)
+        for f_name in os.listdir(r'U:\\'):
+            if f_name[0:length] == recipe and '(' not in f_name :            
+                ftp.upload_file(os.path.join(r'U:\\',f_name),\
+                os.path.join(r'\tr_temp','RECIPE',computer,'Sealing',f_name))
+        ftp.close_conn()
+        
+        # travel(r'D:\叶智荃\专案\脚本开发\TR\GB',recipe) #U:\ Sealing
+    
+    if cha5 == 'Yes':  #chang5  BGA
+        travel(r'W:\\',recipe,r'D:\production file\R8\BGA',r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_recipe\BGA',r'D:\production  file\R8\BGA') 
+        ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",correct) #FTP路径 
+        ftp.creat_dir(os.path.join(r'\tr_temp\RECIPE',computer,'BGA'))
+        #↑创建路径，↓上传档案
+        length = len(recipe)
+        for f_name in os.listdir(r'W:\\'):
+            if f_name[0:length] == recipe and '(' not in f_name :            
+                ftp.upload_file(os.path.join(r'W:\\',f_name),\
+                os.path.join(r'\tr_temp','RECIPE',computer,'BGA',f_name))
+        ftp.close_conn()
+        
+        # travel(r'D:\叶智荃\专案\脚本开发\TR\GB',recipe) #W:\ Bga
+    
+    
+    log_creat()  #生成log前检验是否上传成功
+    messagebox.showinfo(title='上传成功', message='点击确定退出脚本')
+    Upload.quit()
+    
+    
+    
+
+
+def quit1():
+    Upload.quit()
+
+upload_button = Button(Upload, text="上传", font=('微软雅黑', 14), width="10", relief=RAISED, command=upload_success)
+upload_button.place(relx=0.4, rely=0.93, anchor='center')
+#upload_button.pack()
+
+upload_button = Button(Upload, text="取消", font=('微软雅黑', 14), width="10", relief=RAISED, command=quit1)
+upload_button.place(relx=0.6, rely=0.93, anchor='center')
+Upload.mainloop()

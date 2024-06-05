@@ -1,0 +1,357 @@
+
+import csv
+import datetime
+import os
+import shutil
+import socket
+import tkinter as tk
+from time import localtime, strftime
+from tkinter import *
+from tkinter import messagebox, ttk
+
+computer = socket.gethostname()
+
+#允许操作名单
+thisdict =	{
+  '21L668':"Jkpy3479",
+  "20K877":"Cmqv3489",
+  "ADMIN":"23333",
+  '21L120':'Empv2680',
+  '20K092':'Bkqw2470',
+  '21M029':'Hnqx3589',
+  '22K998':'Abcd1610'
+}
+
+Upload = tk.Tk()
+Upload.title("load档")  # 弹窗标题
+Upload.geometry('500x300+300+150')  # 定义窗体的尺寸及位置，格式为('尺寸Xx尺寸Y+位置X+位置Y')
+
+
+LALA_label = Label(Upload, text = "即将开批，请扫条码",font=('微软雅黑',14)).place(x=30, y=35, anchor='nw')
+
+LOT_NO_label1 = Label(Upload, text = "LOT ID:",font=('微软雅黑',14)).place(x=30, y=135, anchor='nw')
+LOT_NO_entry1 = tk.Entry(Upload, font=('微软雅黑',14))  
+LOT_NO_entry1.place(x=110, y=138, anchor='nw',width='336')  
+
+
+def remove_recipe():
+    for root,dirs,files in os.walk(r'D:\production file\R8'):  #删除本地档案文件夹所有档案文件
+        for f in files:            
+            os.remove(os.path.join(root,f))
+    for flord in ['U:\\','W:\\','X:\\','Y:\\','Z:\\']: #删除映射文件夹文件
+        for root,dirs,files in os.walk(flord):
+            for f in files:
+                if 'W:\GD' in root or 'Z:\GD' in root: #忽略golden文件夹
+                    pass
+                else:
+                    os.remove(os.path.join(root,f))
+
+
+#recipe_list = []  #存放recipe清单列表
+def travel(path,arg2,arg3):  # 定义遍历指定路径获取Recipe list函数,arg3本地路径，arg4 nas-temp
+    for root,dirs,files in os.walk(path):
+        #root 表示当前正在访问的文件夹路径
+        #dirs 表示该文件夹下的子目录名list
+        #files 表示该文件夹下的文件list
+        #遍历文件
+        # for f in files:            
+        #     print(os.path.join(root,f))
+        #遍历所有的文件夹
+        # for d in dirs:
+        #     print(os.path.join(root,d))
+        le = len(arg2)
+        for file in files:
+            print(file)
+            if file[0:le] == arg2:
+                if '(' not in file:
+                    shutil.copyfile(os.path.join(root,file),os.path.join(arg3,file)) #复制到本地真实路径
+
+
+def upload_success():
+    LOT_ID=LOT_NO_entry1.get()
+    computer_name1 = socket.gethostname()
+    # computer_name2 = computer_name1 + '.csv'
+    
+    
+    if len(LOT_ID) < 9:
+        messagebox.showerror(title='Lot ID error', message='请确认Lot ID是否正确！')
+        os._exit()
+        
+    computer_name2 = LOT_ID + '.csv'
+    log_name1 = os.path.join(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\OPEN-LOT\recipe_search',computer_name2)
+    
+    with open(log_name1,'w',newline='', encoding='utf-8')as file:
+            writer = csv.writer(file)
+            writer.writerow([LOT_ID,computer_name1])
+    
+    log_name2 = os.path.join(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\OPEN-LOT\get',computer_name2) #以lot id为名，内部为recipe name
+    
+    t1 = datetime.datetime.now()
+    i = 1 #计数代替时间
+    x = 1 #计数代替时间
+    while i<266500: #自己电脑266500约10s
+        if os.path.exists(log_name2):
+            c11 = open(log_name2, mode='r', encoding='utf-8') #文件数量读取
+            recipe_name = c11.read().strip()
+            c11.close()
+            
+            if recipe_name == 'SG': #请确认机台号是否正确
+                messagebox.showerror(title='资讯获取失败', message='请确认机台号是否正确！')
+                os.remove(log_name2)
+                os._exit()
+            if recipe_name == 'RGW1': #存在程式进版，整点后再尝试
+                messagebox.showerror(title='资讯获取失败', message='存在程式进版，整点后再尝试！')
+                os.remove(log_name2)
+                os._exit()
+            if recipe_name == 'LOTID': #存在程式进版，整点后再尝试
+                messagebox.showerror(title='资讯获取失败', message='请确认LOT ID是否正确！')
+                os.remove(log_name2)
+                os._exit()
+            
+            remove_recipe()
+            '''\\10.8.84.56\tr\RECIPE\机台号\handler(or IP...)'''
+            for folder in ['Handler','BGA','GB','IP','IT','Sealing']:
+                recipe_from = os.path.join(r'\\10.8.84.56\tr\RECIPE',computer_name1,folder)
+                recipe_to = os.path.join(r'D:\production file\R8',folder)
+                travel(recipe_from,recipe_name,recipe_to)
+            os.remove(log_name2)
+            os.system(r'\\Tcim-sf\app_public\APP\EAP\EAP4\GUI.exe')
+            i = 720000
+            
+        else:
+            i = i+1
+    if i == 266500:
+        messagebox.showerror(title='资讯获取失败', message='未成功获取资讯，请确认MPE电脑脚本是否正常运行！')
+        # tanchuan()
+        os._exit()
+    t2 = datetime.datetime.now()
+    print(t2-t1)
+    
+    
+    Upload.quit()
+    
+
+def tanchuan():
+    def check_MPE():
+        OPNO1=OP_NO_entry1.get()
+        psw1=psw_entry1.get()
+        
+        if len(OPNO1) ==0 :
+            messagebox.showerror(title='Error', message='请输入工号!')
+            os._exit()
+        if len(psw1) ==0 :
+            messagebox.showerror(title='Error', message='请输入密码!')
+            os._exit()
+        if OPNO1 not in thisdict:
+            messagebox.showerror(title='Error', message='请确认修改人工号是否正确，是否有权限')
+            os._exit()
+        if thisdict.get(OPNO1) != psw1:
+            messagebox.showerror(title='Error', message='请确认修改人密码!')
+            os._exit()
+        
+        messagebox.showinfo(title='注意', message='机台无法访问，请 call 进华确认nas是否开启')
+        messagebox.showinfo(title='注意', message='手动从\\10.9.205.35 copy 档案至本地机台后点击确定，消除弹窗')
+        # shutil.copy(r'D:\production  file\R8',r'D:\production file\R8')
+        os.system(r'\\Tcim-sf\app_public\APP\EAP\EAP4\GUI.exe')
+        
+        vita.destroy()
+        
+    def check_MPE2():
+        OPNO1=OP_NO_entry1.get()
+        psw1=psw_entry1.get()
+        
+        if len(OPNO1) ==0 :
+            messagebox.showerror(title='Error', message='请输入工号!')
+            os._exit()
+        if len(psw1) ==0 :
+            messagebox.showerror(title='Error', message='请输入密码!')
+            os._exit()
+        if OPNO1 not in thisdict:
+            messagebox.showerror(title='Error', message='请确认修改人工号是否正确，是否有权限')
+            os._exit()
+        if thisdict.get(OPNO1) != psw1:
+            messagebox.showerror(title='Error', message='请确认修改人密码!')
+            os._exit()
+        
+        messagebox.showinfo(title='注意', message='小程序异常，请重启办公室右侧电脑')
+        messagebox.showinfo(title='注意', message='手动从\\10.9.205.35 copy 档案至本地机台后点击确定，消除弹窗')
+        # shutil.copy(r'D:\production  file\R8',r'D:\production file\R8')
+        os.system(r'\\Tcim-sf\app_public\APP\EAP\EAP4\GUI.exe')
+        
+        vita.destroy()
+    
+    
+    def quit2():
+        OPNO1=OP_NO_entry1.get()
+        psw1=psw_entry1.get()
+        
+        if len(OPNO1) ==0 :
+            messagebox.showerror(title='Error', message='请输入工号!')
+            os._exit()
+        if len(psw1) ==0 :
+            messagebox.showerror(title='Error', message='请输入密码!')
+            os._exit()
+        if OPNO1 not in thisdict:
+            messagebox.showerror(title='Error', message='请确认修改人工号是否正确，是否有权限')
+            os._exit()
+        if thisdict.get(OPNO1) != psw1:
+            messagebox.showerror(title='Error', message='请确认修改人密码!')
+            os._exit()
+        messagebox.showinfo(title='注意', message='若无异常，请重新开批')
+        vita.destroy()
+            
+    def callback():
+        messagebox.showerror(title='Error', message='请输入修改者工号!')
+    
+    vita = tk.Tk()
+    vita.title("recipe load error")  # 弹窗标题
+    # vita.attributes("-topmost",1)
+    vita.geometry('1000x500+200+100')  # 定义窗体的尺寸及位置，格式为('尺寸Xx尺寸Y+位置X+位置Y')
+    message_lable = Label(vita,text = "档案download error ，请call MPE确认",font=('微软雅黑',24)).place(x=170, y=15, anchor='nw')
+    message_lable2 = Label(vita,text = '确认路径是否可访问： \\\BEEQ_NAS01\TR\RECIPE  ',font=('微软雅黑',12)).place(x=30, y=75, anchor='nw')
+    message_lable3 = Label(vita,text = '确认下面路径内是否有批号命名的csv文件：',font=('微软雅黑',12)).place(x=30, y=135, anchor='nw')
+    message_lable4 = Label(vita,text = r'\\nas-temp-sf\ SFTEST\ BEPE\ yzx\ get ',font=('微软雅黑',12)).place(x=30, y=165, anchor='nw')
+    
+    # message_lable5 = Label(vita,text = "请将确认结果反馈给叶智荃排查原因",font=('微软雅黑',14)).place(x=80, y=245, anchor='nw')
+    OP_NO_label1 = Label(vita, text = "确认人:",font=('微软雅黑',14)).place(x=30, y=275, anchor='nw')
+    OP_NO_entry1 = tk.Entry(vita, font=('微软雅黑',14))  
+    OP_NO_entry1.place(x=100, y=278, anchor='nw')  
+    psw_label1 = Label(vita, text = "密   码:",font = ('微软雅黑',14)).place(x =30, y = 310, anchor = 'nw')
+    psw_entry1 = Entry(vita, font=('微软雅黑',14),show='*')
+    psw_entry1.place(x=100, y=313, anchor='nw')
+    
+    
+    upload_button = Button(vita, text="无法访问", font=('微软雅黑', 14), width="10", relief=RAISED, command=check_MPE)
+    upload_button.place(relx=0.3, rely=0.9, anchor='center')
+    
+    upload_button = Button(vita, text="无csv文件", font=('微软雅黑', 14), width="10", relief=RAISED, command=check_MPE2)
+    upload_button.place(relx=0.5, rely=0.9, anchor='center')
+    
+    upload_button = Button(vita, text="无异常", font=('微软雅黑', 14), width="10", relief=RAISED, command=quit2)
+    upload_button.place(relx=0.7, rely=0.9, anchor='center')
+            
+    vita.protocol('WM_DELETE_WINDOW',callback)
+    
+    vita.mainloop()
+ 
+
+def openlot():
+    recipe_list = []
+    computer = socket.gethostname()
+    recipe_from_1 = os.path.join(r'\\10.8.84.56\tr\recipe',computer,'Handler')
+    for root,dirs,files in os.walk(recipe_from_1):#D:\production file\R8\Handler
+        for f in files:            
+            recipe_list.append(f[:-4])
+            recipe_list.sort()
+    # recipe_list.append('11111')
+    
+    Upload2 = tk.Tk()
+    Upload2.title("手动load档开批")  # 弹窗标题
+    Upload2.geometry('500x300+200+100')  # 定义窗体的尺寸及位置，格式为('尺寸Xx尺寸Y+位置X+位置Y')
+
+        
+    OP_NO_label1 = Label(Upload2, text = "操作者:",font=('微软雅黑',14)).place(x=30, y=15, anchor='nw')
+    OP_NO_entry1 = tk.Entry(Upload2, font=('微软雅黑',14))  
+    OP_NO_entry1.place(x=100, y=18, anchor='nw')  
+    psw_label1 = Label(Upload2, text = "密   码:",font = ('微软雅黑',14)).place(x = 30, y = 50, anchor = 'nw')
+    psw_entry1 = Entry(Upload2, font=('微软雅黑',14),show='*')
+    psw_entry1.place(x=100, y=53, anchor='nw')
+
+
+    machine_label = Label(Upload2, text = "本次使用档案:",font=('微软雅黑',14)).place(x=30, y=125, anchor='nw')
+    # machine_value = Entry(Upload2, font=('微软雅黑',14))
+    # machine_value.place(x=160, y=128, anchor='nw')
+    machine_value = StringVar()
+    machine_values = recipe_list
+    #machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+    #machine_entry.place(x=100, y=88, anchor='nw')  
+    combobox1 = ttk.Combobox(
+        master=Upload2, # 父容器
+        height=10, # 高度,下拉显示的条目数量
+        width=22, # 宽度
+        state='normal', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+        cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+        font=('微软雅黑', 14), # 字体
+        textvariable=machine_value, # 通过StringVar设置可改变的值
+        values=machine_values # 设置下拉框的选项
+        )
+    combobox1.place(x=160, y=128)
+    # combobox1.current(0)
+    
+    
+    
+    def travel(path,arg2,arg3):  # 定义遍历指定路径获取Recipe list函数,arg3本地路径，arg4 nas-temp
+        for root,dirs,files in os.walk(path):
+            le = len(arg2)
+            for file in files:
+                print(file)
+                if file[0:le] == arg2:
+                    if '(' not in file:
+                        shutil.copyfile(os.path.join(root,file),os.path.join(arg3,file)) #复制到本地真实路径
+
+
+    def success():
+        OPNO1=OP_NO_entry1.get()
+        psw1=psw_entry1.get()  
+        mac=combobox1.get() #档案名
+        print(OPNO1,len(OPNO1))
+        print(psw1,len(psw1))
+        print(mac,len(mac))
+        recipe = mac+'.pkg'
+        
+        if len(OPNO1) ==0 :
+            messagebox.showerror(title='Error', message='请输入工号!')
+            os._exit()
+        if len(psw1) ==0 :
+            messagebox.showerror(title='Error', message='请输入密码!')
+            os._exit()
+        if OPNO1 not in thisdict:
+            messagebox.showerror(title='Error', message='请确认该工号是否正确，是否有权限')
+            os._exit()
+        if thisdict.get(OPNO1) != psw1:
+            messagebox.showerror(title='Error', message='请确认密码是否正确!')
+            os._exit()
+        
+        if len(mac) ==0 :
+            
+            messagebox.showerror(title='Error', message='请选择档案!')
+            os._exit()   
+            
+        messagebox.showinfo(title='即将手动开批', message='点击确定开始load档')
+        
+        for folder in ['Handler','BGA','GB','IP','IT','Sealing']:
+            recipe_from = os.path.join(r'\\10.8.84.56\tr\recipe',computer,folder)
+            recipe_to = os.path.join(r'D:\production file\R8',folder)
+            travel(recipe_from,mac,recipe_to)
+        #转移handler档案至package文件夹
+        os.system(r'\\Tcim-sf\app_public\APP\EAP\EAP4\GUI.exe')
+        Upload2.quit()
+    
+    
+    def quit2():
+        Upload2.destroy()
+    
+    
+    
+    
+    upload_button2 = Button(Upload2, text="load", font=('微软雅黑', 14), width="10", relief=RAISED, command=success)
+    upload_button2.place(relx=0.3, rely=0.9, anchor='center')
+    #upload_button.pack()
+
+    upload_button2 = Button(Upload2, text="cancel", font=('微软雅黑', 14), width="10", relief=RAISED, command=quit2)
+    upload_button2.place(relx=0.7, rely=0.9, anchor='center')
+    # Upload2.mainloop()
+
+def quit1():
+    Upload.quit()
+
+upload_button = Button(Upload, text="load", font=('微软雅黑', 14), width="10", relief=RAISED, command=upload_success)
+upload_button.place(relx=0.3, rely=0.9, anchor='center')
+#upload_button.pack()
+
+upload_button = Button(Upload, text="※", font=('微软雅黑', 6), width="2", relief=RAISED, command=openlot)
+upload_button.place(relx=0.5, rely=0.95, anchor='center')
+
+upload_button = Button(Upload, text="cancel", font=('微软雅黑', 14), width="10", relief=RAISED, command=quit1)
+upload_button.place(relx=0.7, rely=0.9, anchor='center')
+Upload.mainloop()

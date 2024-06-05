@@ -186,7 +186,7 @@ class FtpUtil(object):
 
 def correct_password():
     test1 = 'str'
-    for use_passwd in ['7410963.zz','7410963.qq','yy7410963.','7410963.aa']: #密码组合
+    for use_passwd in ['1234.zz','4321.qq','yy1234.','4321.aa']: #密码组合
         try:
             ftp = FtpUtil("10.8.88.13","zhiquan.ye@QLELTD.com",use_passwd)
             with open(r'\\nas-temp-sf\SFTEST\BEPE_SYS_DIR\TR_upload_buffer\upload_config.csv','w',newline='', encoding='utf-8')as file:
@@ -214,7 +214,6 @@ except ftplib.all_errors:
     print(correct)
             
 
-# correct = '7410963.zz'
 
             
 package1 = []
@@ -424,21 +423,7 @@ change_item_entry_9.place(x=30, y=395, anchor = 'nw')
 change_value_entry_10 = Entry(Upload, font=('微软雅黑', 14), width="60")
 change_value_entry_10.place(x=200, y = 395, anchor='nw')
 
-#允许操作名单
-# thisdict =	{
-#   '21L668':"Jkpy3479",
-#   "20K877":"Cmqv3489",
-#   "ADMIN":"23333",
-#   '19K905':'Lth82597',
-#   '18T071':'Mev18633',
-#   '21L120':'Empv2680',
-#   '20K092':'Bkqw2470',
-#   '21M029':'Hnqx3589',
-#   '18T109':'Cnx27256',
-#   '22K998':'Abcd1610',
-#   '20K019':'Cvu62776',
-#   '21K591':'Qfb67398'
-# }
+
 
 log_file = open(r'\\10.8.84.56\tr_temp\CONFIG\upload_recipe.dat', mode='r', encoding='utf-8')
 log_info=log_file.read().strip()

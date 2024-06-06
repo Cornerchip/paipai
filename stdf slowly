@@ -1,3 +1,163 @@
+import pandas as pd
+from abc import ABC
+import time
+import gzip
+import os
+import math
+import numpy  as np
+
+from pystdf.IO import Parser
+import pystdf.V4 as V4
+from pystdf.Writers import *
+from pystdf.Importer import STDF2DataFrame
+from PyQt5.QtCore import *
+
+class MyTestResultProfiler:
+    def __init__(self, filename, file, filezise, notify_progress_bar, ignore_tnum):
+        self.filename = filename
+        self.reset_flag = False
+        self.total = 0
+        self.count = 0
+        self.site_count = 0
+        self.site_array = []
+        self.test_result_dict = {}
+        self.title = {}
+
+        self.file_nam = self.filename.split('/')[-1]
+        self.tester_nam = ''
+        self.start_t = ''
+        self.pgm_nam = ''
+        self.lot_id = ''
+        self.wafer_id = ''
+        self.job_nam = ''
+        self.exec_type = '' #IG-XL or 93000
+        #下面到空位的是自己加的
+        self.wafer_flat = ''
+        self.subLot = ''
+        self.wafer_center_x = ''
+        self.wafer_center_y = ''
+        self.wafer_pos_x = ''
+        self.wafer_pos_y = ''
+        self.tester_type = ''
+        self.product = ''
+        self.operator = ''
+        self.exec_revision = ''
+        self.test_code = ''
+        self.mode_code = ''
+        self.temperature = ''
+        self.family = ''
+        self.facility = ''
+        self.process = ''
+        self.flow_ID = ''
+        self.setup_ID = ''
+        self.site_detail = ''
+        self.site_group = ''
+        self.test_site = ''
+        self.handler_type = ''
+        self.handler_ID = ''
+        self.prob_card_ID = ''
+        self.lord_board_ID = ''
+        self.DIB_board_ID = ''
+
+
+        self.tname_tnumber_dict = {}
+        self.sbin_description = {}
+        self.DIE_ID = []
+        self.lastrectype = None
+        self.pmr_dict = {}
+
+        #for MPR
+        self.mpr_pin_dict = {}
+
+        self.all_test_result_pd = pd.DataFrame()
+        self.title_pd = pd.DataFrame()
+        #用于存储测试结果
+        self.frame = pd.DataFrame()
+        self.title_frame = pd.DataFrame()
+
+        self.file = file #io.BytesIO(b'')
+        self.filezise = filezise
+        self.notify_progress_bar = notify_progress_bar
+        self.ignore_tnum = ignore_tnum
+
+        # in order to distinguish same name inst in flow
+        #用于处理在测试过程中出现的重名实例
+        self.same_name_inst_cnt_dict = {}
+        self.cur_inst_name = ""
+        self.pre_inst_name = ""
+
+    def after_begin(self, dataSource):
+        self.reset_flag = False
+        self.total = 0
+        self.count = 0
+        self.site_count = 0
+        self.site_array = []
+        self.test_result_dict = {'Parameter': [], 'SBIN': [], 'HBIN': [], 'DIE_X': [],
+                                 'DIE_Y': [], 'SITE': [], 'TIME': [], 'TOTAL_TESTS': [],
+                                 'LOT_ID': [], 'WAFER_ID': []}
+        self.title = {'--- Global Info:':[''],'Date':[],'SetupTime':[],'StartTime':[],
+                      'FinishTime':[],'ProgramName':[],'Lot':[],'SubLot':[],'Wafer_Pos_X':[],
+                      'Wafer_Pos_Y':[],'TesterName':[],'TesterType':[],'Product':[],'Operator':[],
+                      'ExecType':[],'ExecRevision':[],'TestCode':[],'ModeCode':[],'Temperature':[],'Family':[],
+                      'Facility':[],'FreqStep':[],'FlowID':[],'SetupID':[],
+                      '--- Site details:':[],'Site group':[],'Testing sites':[],'Handler ID':[],
+                      'Load board ID':[],' ':['']}
+        self.all_test_result_pd = pd.DataFrame()
+        self.title_pd = pd.DataFrame()
+        self.frame = pd.DataFrame()
+        self.title_frame = pd.DataFrame()
+
+        self.file_nam = self.filename.split('/')[-1]
+        self.tester_nam = ''
+        self.start_t = ''
+        self.pgm_nam = ''
+        self.lot_id = ''
+        self.wafer_id = ''
+        self.job_nam = ''
+        self.exec_type = ''
+        #下面到空位的是自己加的
+        self.setup_t = ''
+        self.finish_t = ''
+        self.wafer_flat = ''
+        self.subLot = ''
+        self.wafer_center_x = ''
+        self.wafer_center_y = ''
+        self.wafer_pos_x = ''
+        self.wafer_pos_y = ''
+        self.tester_type = ''
+        self.product = ''
+        self.operator = ''
+        self.exec_revision = ''
+        self.test_code = ''
+        self.mode_code = ''
+        self.temperature = ''
+        self.family = ''
+        self.facility = ''
+        self.process = ''
+        self.flow_ID = ''
+        self.setup_ID = ''
+        self.site_detail = ''
+        self.site_group = ''
+        self.test_site = ''
+        self.handler_type = ''
+        self.handler_ID = ''
+        self.prob_card_ID = ''
+        self.lord_board_ID = ''
+        self.DIB_board_ID = ''
+
+        self.tname_tnumber_dict = {}
+        self.sbin_description = {}
+        self.DIE_ID = []
+        self.lastrectype = None
+        self.pmr_dict = {}
+
+        #for MPR
+        self.mpr_pin_dict = {}
+
+        # in order to distinguish same name inst in flow
+        self.same_name_inst_cnt_dict = {}
+        self.cur_inst_name = ""
+        self.pre_inst_name = ""
 
     def after_send(self, dataSource, data):
         rectype, fields = data
@@ -339,4 +499,93 @@
         self.lastrectype = rectype
         # self.notify_progress_bar.emit(int(self.file.tell()/self.filezise*100))
         # print(int(self.file.tell()/self.filezise*100))
+
+    def after_complete(self, dataSource):
+        start_t = time.time()
+        # self.generate_bin_summary()
+        # self.generate_wafer_map()
+        self.title['Date'].append(self.start_t)
+        self.title['SetupTime'].append(self.setup_t)
+        self.title['StartTime'].append(self.start_t)
+        self.title['FinishTime'].append(self.finish_t)
+        self.title['ProgramName'].append(self.job_nam)
+        self.title['Lot'].append(self.lot_id)
+        self.title['SubLot'].append(self.subLot)
+        # self.title['Wafer'].append(self.wafer_id)
+        # self.title['Wafer_Flat'].append(self.wafer_flat)
+        # self.title['Wafer_Center_X'].append(self.wafer_center_x)
+        # self.title['Wafer_Center_Y'].append(self.wafer_center_y)
+        self.title['Wafer_Pos_X'].append(self.wafer_pos_x)
+        self.title['Wafer_Pos_Y'].append(self.wafer_pos_y)
+        self.title['TesterName'].append(self.tester_nam)
+        self.title['TesterType'].append(self.tester_type)
+        self.title['Product'].append(self.product)
+        self.title['Operator'].append(self.operator)
+        self.title['ExecType'].append(self.exec_type)
+        self.title['ExecRevision'].append(self.exec_revision)
+        self.title['TestCode'].append(self.test_code)
+        self.title['ModeCode'].append(self.mode_code)
+        self.title['Temperature'].append(self.temperature)
+        self.title['Family'].append(self.family)
+        self.title['Facility'].append(self.facility)
+        # self.title['Process'].append(self.process)
+        self.title['FreqStep'].append(self.job_nam)
+        self.title['FlowID'].append(self.flow_ID)
+        self.title['SetupID'].append(self.setup_ID)
+        self.title['--- Site details:'].append(self.site_detail)
+        self.title['Site group'].append(self.site_group)
+        self.title['Testing sites'].append(self.test_site)
+        # self.title['Handler type'].append(self.handler_type)
+        self.title['Handler ID'].append(self.handler_ID)
+        # self.title['Probe card ID'].append(self.prob_card_ID)
+        self.title['Load board ID'].append(self.lord_board_ID)
+        # self.title['DIB board ID'].append(self.DIB_board_ID)
+        print(self.title)
+        tmp_pd_title = pd.DataFrame.from_dict(self.title, orient='index')
+        self.title_pd = pd.concat([self.title_pd, tmp_pd_title], sort=False, ignore_index=False)
+        self.generate_data_summary()
+        # print(tmp_pd_title)
+        # print(self.title_frame)
+        end_t = time.time()
+        print('CSV生成时间：', end_t - start_t)
+
+    def generate_data_summary(self):
+        if not self.all_test_result_pd.empty:
+
+            self.frame = self.all_test_result_pd
+            # self.frame.SBIN = self.frame.SOFT_BIN.replace(self.sbin_description)
+            self.title_frame = self.title_pd
+            # Edit multi-level header
+            # frame.set_index(['JOB_NAM', 'LOT_ID', 'WAFER_ID', 'SITE_NUM', 'X_COORD',
+            #                              'Y_COORD', 'PART_ID', 'HARD_BIN', 'SOFT_BIN', 'TEST_T'])
+
+            # tname_list = []
+            # tnumber_list = []
+            # hilimit_list = []
+            # lolimit_list = []
+            # unit_vect_nam_list = []
+            # tmplist = self.frame.columns.values.tolist()
+            # for i in range(len(tmplist)):
+            #     if len(str(tmplist[i]).split('|')) == 1:
+            #         tname_list.append('')
+            #         tnumber_list.append(str(tmplist[i]).split('|')[0])
+            #         hilimit_list.append('')
+            #         lolimit_list.append('')
+            #         unit_vect_nam_list.append('')
+            #     else:
+            #         tname_list.append(str(tmplist[i]).split('|')[1])
+            #         tnumber_list.append(str(tmplist[i]).split('|')[0])
+            #         hilimit_list.append(str(tmplist[i]).split('|')[2])
+            #         lolimit_list.append(str(tmplist[i]).split('|')[3])
+            #         unit_vect_nam_list.append(str(tmplist[i]).split('|')[4])
+            # self.frame.columns = [tname_list, hilimit_list, lolimit_list, unit_vect_nam_list, tnumber_list]
+            # mcol = pd.MultiIndex.from_arrays([tname_list, tnumber_list])
+            # frame.Mu
+            # new_frame = pd.DataFrame(frame.iloc[:,:], columns=mcol)
+            # frame.to_csv(self.outputname + "_csv_log.csv")
+            # f = open(self.outputname + '_csv_log.csv', 'a')
+            # self.frame.to_csv(f)
+            # f.close()
+        else:
+            print("No test result samples found :(")
 

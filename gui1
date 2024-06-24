@@ -1,0 +1,128 @@
+
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from tkcalendar import DateEntry
+import pymssql
+import pandas as pd
+from datetime import datetime
+
+# Function to query the database
+def query_database():
+    csv_machine = entry_machine.get()
+    start_date = entry_start_date.get_date()
+    end_date = entry_end_date.get_date()
+    
+    if not csv_machine:
+        messagebox.showerror("Input Error", "Please enter a machine number.")
+        return
+
+    try:
+        conn = pymssql.connect(host='AP147', port='1433', user='BEPE', password='BEPE1234', database='TEST_BE', charset='utf8')
+        cursor = conn.cursor()
+        sql = '''SELECT number, 机台, 报警种类, 报警时间, recipe, 报警内容, 处置方式, 消除时间, 消除人员, [弹窗持续时间(min)] 
+                 FROM [dbo].[SCAN_alert] 
+                 WHERE [机台] = %s AND [报警时间] BETWEEN %s AND %s
+                 ORDER BY number'''
+        cursor.execute(sql, (csv_machine, start_date, end_date))
+        rows = cursor.fetchall()
+
+        # Clear previous contents
+        for item in tree.get_children():
+            tree.delete(item)
+
+        if rows:
+            for row in rows:
+                tree.insert("", "end", values=row)
+        else:
+            messagebox.showinfo("No Records", "No matching records found.")
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        messagebox.showerror("Database Error", str(e))
+
+# Function to export data to CSV or XLSX
+def export_data():
+    csv_machine = entry_machine.get()
+    start_date = entry_start_date.get_date()
+    end_date = entry_end_date.get_date()
+
+    if not csv_machine:
+        messagebox.showerror("Input Error", "Please enter a machine number.")
+        return
+
+    try:
+        conn = pymssql.connect(host='AP147', port='1433', user='BEPE', password='BEPE1234', database='TEST_BE', charset='utf8')
+        sql = '''SELECT number, 机台, 报警种类, 报警时间, recipe, 报警内容, 处置方式, 消除时间, 消除人员, [弹窗持续时间(min)] 
+                 FROM [dbo].[SCAN_alert] 
+                 WHERE [机台] = %s AND [报警时间] BETWEEN %s AND %s
+                 ORDER BY number'''
+        df = pd.read_sql(sql, conn, params=(csv_machine, start_date, end_date))
+        conn.close()
+        
+        if not df.empty:
+            file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("Excel files", "*.xlsx"), ("All files", "*.*")])
+            if file_path:
+                if file_path.endswith('.xlsx'):
+                    df.to_excel(file_path, index=False)
+                    messagebox.showinfo("Export Success", f"Data exported to '{file_path}'.")
+                else:
+                    df.to_csv(file_path, index=False)
+                    messagebox.showinfo("Export Success", f"Data exported to '{file_path}'.")
+        else:
+            messagebox.showinfo("No Records", "No matching records found to export.")
+    except Exception as e:
+        messagebox.showerror("Database Error", str(e))
+
+# Create main window
+root = tk.Tk()
+root.title("Database Query and Export Tool")
+root.geometry("950x550")
+
+# Query frame
+query_frame = tk.Frame(root)
+query_frame.pack(pady=20)
+
+tk.Label(query_frame, text="Machine Number:").grid(row=0, column=0, padx=10)
+entry_machine = tk.Entry(query_frame)
+entry_machine.grid(row=0, column=1, padx=10)
+
+tk.Label(query_frame, text="Start Date:").grid(row=1, column=0, padx=10)
+entry_start_date = DateEntry(query_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=datetime.now().year, month=datetime.now().month, day=1)
+entry_start_date.grid(row=1, column=1, padx=10)
+
+tk.Label(query_frame, text="End Date:").grid(row=2, column=0, padx=10)
+entry_end_date = DateEntry(query_frame, width=12, background='darkblue', foreground='white', borderwidth=2, year=datetime.now().year, month=datetime.now().month, day=datetime.now().day)
+entry_end_date.grid(row=2, column=1, padx=10)
+
+query_button = tk.Button(query_frame, text="Query", command=query_database)
+query_button.grid(row=3, column=1, padx=10)
+
+# Export button
+export_button = tk.Button(root, text="Export", command=export_data)
+export_button.pack(pady=10)
+
+# Result frame with scrollbar
+result_frame = tk.Frame(root)
+result_frame.pack(fill='both', expand=True)
+
+# Adding Treeview widget
+columns = ("number", "机台", "报警种类", "报警时间", "recipe", "报警内容", "处置方式", "消除时间", "消除人员", "弹窗持续时间(min)")
+tree = ttk.Treeview(result_frame, columns=columns, show='headings')
+for col in columns:
+    tree.heading(col, text=col)
+    tree.column(col, width=100)
+
+# Adding Scrollbars
+vsb = ttk.Scrollbar(result_frame, orient="vertical", command=tree.yview)
+vsb.pack(side='right', fill='y')
+tree.configure(yscrollcommand=vsb.set)
+
+hsb = ttk.Scrollbar(result_frame, orient="horizontal", command=tree.xview)
+hsb.pack(side='bottom', fill='x')
+tree.configure(xscrollcommand=hsb.set)
+
+tree.pack(fill='both', expand=True)
+
+# Start main loop
+root.mainloop()

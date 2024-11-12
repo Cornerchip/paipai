@@ -1,0 +1,19 @@
+{
+    "windows": [
+        {"text": ["行1", "行2", "行3"], "bg_color": "red"},
+        {"text": ["行1", "行2"], "bg_color": "lime"},
+        {"text": ["行1", "行2", "行3", "行4"], "bg_color": "blue"},
+        {"text": ["行1"], "bg_color": "cyan"},
+        {"text": ["行1", "行2", "行3"], "bg_color": "cyan"},
+        {"text": ["行1", "行2"], "bg_color": "cyan"},
+        {"text": ["行1"], "bg_color": "cyan"},
+        {"text": ["行1", "行2", "行3", "行4"], "bg_color": "cyan"},
+        {"text": ["行1", "行2"], "bg_color": "lime"}
+    ],
+    "legend": {
+        "lime": "状态1",
+        "blue": "状态2",
+        "cyan": "状态3",
+        "red": "状态4"
+    }
+}

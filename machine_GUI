@@ -1,65 +1,380 @@
-import tkinter as tk
-from tkinter import simpledialog, messagebox
-import json
 
-# 加载配置文件
+import tkinter as tk
+from tkinter import simpledialog, messagebox, Menu, Toplevel
+import json
+import datetime
+import os
+import csv
+from tkinter import *
+from tkinter import messagebox, ttk
+from Crypto.Cipher import AES
+import base64
+
+log_name3 = os.path.join(r'\\192.168.1.1','window_log')
+thisdict =	{}
+log_file = open('clear_alarm.dat', mode='r', encoding='utf-8')
+log_info=log_file.read().strip()
+# log_file.close()
+row=log_info.split('\n')
+log_file.close()
+# print(row)
+for roooow in row:
+    new = roooow.split(';')
+    # print(new)
+    thisdict[new[0]]=new[1]
+
+def Initialize(): #初始化配置文件，默认设置9个机台无报警
+    initial = {
+    "windows": [
+        {"bg_color": "lime", "text": ["机台: S2201","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S3401","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S3813","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S3814","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S3815","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S3817","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S3903","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S8903","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]},
+        {"bg_color": "lime", "text": ["机台: S8904","报警lot: ", "报警档案: ", "报警内容: ", "报警时长(min): "]}
+    ],
+    "legend": {
+        "lime": "无报警",
+        "blue": "良率异常",
+        "cyan": "权限/参数异常",
+        "red": "两种异常"
+    }
+    }
+    with open("config.json", "w", encoding="utf-8") as f:
+        json.dump(initial, f,indent=3,  ensure_ascii=False)
+
+'''
+AES对称加密算法
+'''
+# 需要补位，str不是16的倍数那就补足为16的倍数
+def add_to_16(value):
+    while len(value) % 16 != 0:
+        value += '\0'
+    return str.encode(value)  # 返回bytes
+# 加密方法
+def encrypt(key, text):
+    aes = AES.new(add_to_16(key), AES.MODE_ECB)  # 初始化加密器
+    encrypt_aes = aes.encrypt(add_to_16(text))  # 先进行aes加密
+    encrypted_text = str(base64.encodebytes(encrypt_aes), encoding='utf-8')  # 执行加密并转码返回bytes
+    return encrypted_text
+# 解密方法
+def decrypt(key, text):
+    aes = AES.new(add_to_16(key), AES.MODE_ECB)  # 初始化加密器
+    base64_decrypted = base64.decodebytes(text.encode(encoding='utf-8'))  # 优先逆向解密base64成bytes
+    decrypted_text = str(aes.decrypt(base64_decrypted), encoding='utf-8').replace('\0', '')  # 执行解密密并转码返回str
+    return decrypted_text
+
+def creat_log_name(name,fail_type):  # 创建当下log名称
+    now = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    computer_name2 = name +'_'+ now + '_' +fail_type +'.csv'
+    return computer_name2
+
+def read_folder():
+    '''读取中转nas路径内'''
+    with open("config.json", "r", encoding="utf-8") as f:
+        config_now = json.load(f)
+    for root,dirs,files in os.walk(r'\\192.168.1.1\GUI'):  #读中转路径内dat文件
+        #root 表示当前正在访问的文件夹路径
+        #dirs 表示该文件夹下的子目录名list
+        #files 表示该文件夹下的文件list
+        #遍历文件
+        for f in files:
+            file_infor = open(os.path.join(root,f), mode='r', encoding='utf-8')
+            sss=file_infor.read().strip()
+            file_infor.close()
+            message = sss.split('\n') # 中转路径数据
+            # print(message)
+            '''===↑取中转路径数据值,↓与配置文件对比，获取同机台状态==='''
+            for i in range(len(config_now['windows'])):
+                message_line = config_now['windows'][i]['text'][0].split(':')
+                if message_line[1].strip() == f[:5]: #配置文件内第一行名称 = 中转文件名前5个字符
+                    for y in range(3): #前三行直接读取
+                        # text = []
+                        # text.append(config_now['windows'][i]['text'][0])
+                        message_machine = message[y].split('==')
+                        need = message_machine[1] #中转log配套信息提取
+                        infor = config_now['windows'][i]['text'][y+1]
+                        if '︱' in infor :
+                            new_infor = infor+ need
+                        else:
+                            new_infor = infor + need +' ︱ '
+                        # new_infor = infor +'︱'+ need
+                        # text.append(new_infor)
+                        config_now['windows'][i]['text'][y+1]=new_infor
+                    #第四行↓把时间相减
+                    message_machine = message[3].split('==')
+                    need = message_machine[1][:19] #中转log配套信息提取
+                    infor = config_now['windows'][i]['text'][4]
+                    buffer_time = datetime.datetime.strptime(need,'%Y-%m-%d %H:%M:%S')
+                    #中转信息转换为datetime格式便于处理
+                    use_time_date = datetime.datetime.now() - buffer_time
+                    use_time = divmod(use_time_date.total_seconds(),60)[0]
+                    show_time = str(int(use_time))
+                    # print(show_time)
+                    # print(type(show_time))
+                    if '︱' in infor :
+                        new_infor = infor+ show_time
+                    else:
+                        new_infor = infor + show_time +' ︱ '
+                    # new_infor = infor + '︱' + show_time
+                    # text.append(new_infor)
+                    config_now['windows'][i]['text'][4] = new_infor
+                    #第五行↓要改颜色
+                    need = message[4]
+                    config_now['windows'][i]['bg_color'] = need
+                    if '︱ S' in config_now['windows'][i]['text'][1] : #两个报警时改成红的
+                        config_now['windows'][i]['bg_color'] = 'red'
+    with open("config.json", "w", encoding="utf-8") as f:
+        json.dump(config_now, f,indent=4,  ensure_ascii=False)
+
 def load_config():
+    Initialize() #初始化
+    # 假设config.json文件的格式如下
+    '''下面是读取中转nas路径内并生成新的配置文件'''
+    read_folder()
+    '''下面是读取配置文件内容'''
     with open("config.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
-# 刷新显示状态
 def refresh_display():
     config = load_config()
     for i, window in enumerate(config['windows']):
         if i < len(windows):
-            # 更新分窗口内容和背景颜色
-            windows[i].delete("1.0", tk.END)
-            windows[i].insert(tk.END, "\n".join(window['text']))
-            windows[i].config(bg=window['bg_color'])
+            frame = windows[i]
+            frame.config(bg=window['bg_color'])
 
-# 弹出账密验证
-def auth_popup():
-    username = simpledialog.askstring("登录", "请输入用户名:")
+            #更新Label内容
+            for widget in frame.winfo_children():
+                if isinstance(widget,tk.Label):
+                    widget.config(text="\n".join(window['text']),bg=window['bg_color'])
+            # windows[i].config(bg=window['bg_color'])
+            # windows[i].children['LabelFrame'].config(text="\n".join(window['text']))
+            # # 为了修复label无法更新的问题，正确地通过子控件名找到label
+            # for widget in windows[i].winfo_children():
+            #     if isinstance(widget, tk.Label):
+            #         widget.config(text="\n".join(window['text']))
+    
+    for i, window_config in enumerate(config['windows']):
+        # 创建LabelFrame并设置大小一致
+        chuangkou = window_config['text']
+        title = chuangkou[0].split(':')
+        frame = tk.LabelFrame(root, text=title[1], padx=5, pady=5, bg=window_config['bg_color'], width=300, height=150, font=("微软雅黑", 12))
+        frame.grid(row=i // 3, column=i % 3, padx=10, pady=10)
+
+        # 设置背景色和文本
+        label = tk.Label(frame, text="\n".join(window_config['text']), bg=window_config['bg_color'], font=("Arial", 10), width=25, height=5,justify='left',anchor='w')
+        label.pack(expand=True)
+
+        def show_menu(event, machine=title[1].strip(), index=i, color = config['windows'][i]['bg_color'], error_time = config['windows'][i]['text'][4]):
+            menu = Menu(root, tearoff=0)
+            menu.add_command(label="具体内容", command=lambda: show_details(machine, index))
+            menu.add_command(label="消除报警", command=lambda: auth_popup(machine, color,error_time))
+            menu.post(event.x_root, event.y_root)
+
+        frame.bind("<Button-3>", show_menu)
+        label.bind("<Button-3>", show_menu)
+        windows.append(frame)
+
+
+    #更新刷新时间
+    update_refresh_time()
+    #自动触发下一次刷新
+    schedule_auto_refresh()
+
+def update_refresh_time():
+    '''更新刷新时间显示'''
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    refresh_time_laabel.config(text=f'刷新时间： {current_time}')
+
+def schedule_auto_refresh():
+    '''每10min自动刷新'''
+    root.after(600000,refresh_display)
+
+def auth_popup(machine, color,error_time):
+    Upload2 = tk.Toplevel()
+    Upload2.title("验证账密")  # 弹窗标题
+    # Upload2.wm_attributes("-topmost",1)
+    Upload2.geometry('300x150+500+110')  # 定义窗体的尺寸及位置，格式为('尺寸Xx尺寸Y+位置X+位置Y')
+    Upload2.resizable(False, False)
+    # self.root.resizable(width = False,height = False)
+    OP_NO_label1 = Label(Upload2, text = "工   号:",font=('微软雅黑',12)).place(x=30, y=10, anchor='nw')
+    # self.label_e.pack()
+    OP_NO_entry1 = tk.Entry(Upload2, font=('微软雅黑',12))  
+    OP_NO_entry1.place(x=100, y=15, anchor='nw')  
+    psw_label1 = Label(Upload2, text = "密   码:",font = ('微软雅黑',12)).place(x =30, y = 50, anchor = 'nw')
+    psw_entry1 = Entry(Upload2, font=('微软雅黑',12),show='*')
+    psw_entry1.place(x=100, y=55, anchor='nw') 
+    # message_lable = Label(Upload2,text = "间隔时间(min):",font=('微软雅黑',12)).place(x=10, y=90, anchor='nw')
+    # machine_value = StringVar()
+    # machine_values = [5,30,60,90,120]
+    #machine_entry = tk.Entry(Upload, font=('微软雅黑',14), width="12")  
+    #machine_entry.place(x=100, y=88, anchor='nw')  
+    # combobox1 = ttk.Combobox(
+    #     master=Upload2, # 父容器
+    #     height=10, # 高度,下拉显示的条目数量
+    #     width=5, # 宽度
+    #     state='readonly', # 设置状态 normal(可选可输入)、readonly(只可选)、 disabled
+    #     cursor='arrow', # 鼠标移动时样式 arrow, circle, cross, plus...
+    #     font=('微软雅黑', 12), # 字体
+    #     textvariable=machine_value, # 通过StringVar设置可改变的值
+    #     values=machine_values # 设置下拉框的选项
+    #     )
+    # combobox1.place(x=15, y=115)
+    
+    def yes():
+        # global jiange
+        # time_interval=combobox1.get() #选择间隔时间
+        # print('error_time==',error_time)
+        OPNO=OP_NO_entry1.get()
+        psw=psw_entry1.get()
+        if len(OPNO) ==0 :
+            messagebox.showerror(title='Error', message='请输入工号!')
+            os._exit()
+        if len(psw) ==0 :
+            messagebox.showerror(title='Error', message='请输入密码!')
+            os._exit()
+    
+        psw4 = encrypt(OPNO,psw).strip()
+        if OPNO not in thisdict:
+            messagebox.showerror(title='Error', message='该工号没有权限!')
+            os._exit()
+        if thisdict.get(OPNO) != psw4:
+            messagebox.showerror(title='Error', message='工号密码对应错误!')
+            os._exit()
+        # jiange = time_interval
+        # print(jiange)
+        # winsound. PlaySound("*", winsound. SND_PURGE)
+        clear_alarm(machine, color,error_time,OPNO)
+        Upload2.destroy()
+        
+    
+    upload_button2 = Button(Upload2, text="消除报警", font=('微软雅黑', 12), width="6", relief=RAISED, command=yes)
+    upload_button2.place(relx=0.5, rely=0.8, anchor='center')
+    '''username = simpledialog.askstring("登录", "请输入用户名:")
     password = simpledialog.askstring("登录", "请输入密码:", show="*")
-    # 假设验证用户名和密码
     if username == "user" and password == "pass":
         messagebox.showinfo("成功", "登录成功！")
     else:
-        messagebox.showerror("错误", "用户名或密码错误！")
+        messagebox.showerror("错误", "用户名或密码错误！")'''
+    Upload2.transient()  # 将顶级窗口置于主窗口之上
+    Upload2.grab_set()   # 捕获所有事件，防止操作其他窗口
+    Upload2.wait_window()  # 等待窗口关闭
 
-# 创建主窗口
+def show_details(name, index):
+    #每次点击右键时，动态加载最新的配置数据
+    config = load_config()
+    window_data = config['windows'][index] #获取当前窗口的最新数据
+
+    #创建新的详情窗口并动态显示内容
+    detail_window = Toplevel(root)
+    detail_window.title(f"{name} 详情")
+
+    #添加最新的数据
+    for line in window_data['text']:
+        tk.Label(detail_window, text=line,anchor="w").pack(anchor="w")
+
+
+def clear_alarm(machine, color,error_time,OPNO):
+    # auth_popup() #检查账密
+    config_alarm = load_config()
+    alarm_dir = config_alarm["legend"]
+    print(alarm_dir)
+    if color == 'lime': #无报警
+        os._exit()
+        return True
+    elif color == 'blue': #良率异常
+        alarm_type = 'yield_error'
+        dat_file_name = machine +'_1.dat'
+    elif color == 'cyan': #权限/参数异常
+        alarm_type = 'run_check_error'
+        dat_file_name = machine +'_2.dat'
+    elif color == 'red': #两种异常
+        alarm_type = 'two_error'
+        messagebox.showerror(title='Error', message='如同时有两种报警异常，请反馈YZQ')
+        os._exit()
+
+    csv_log = creat_log_name(machine,alarm_type)
+    dat_file = os.path.join('\\192.168.1.1\GUI',dat_file_name)#中转文件nas存放路径
+    os.remove(dat_file) #删除中转路径内nas文件
+    buffer = error_time.split(':')
+    long_time = float(buffer[1][:-2].strip())
+    delta = datetime.timedelta(minutes=(long_time+2))
+    short_time = datetime.datetime.now() - delta
+    log_name4 = os.path.join(log_name3,csv_log)
+    print(long_time)
+    print(delta)
+    print(short_time)
+    #↓向中转文件夹更新触发csv，将相关信息写入数据库内
+    with open(log_name4,'w',newline='', encoding='utf-8')as file:
+        writer = csv.writer(file)
+        writer.writerow(['2'])
+        writer.writerow([machine])
+        writer.writerow([alarm_type])
+        writer.writerow([str(datetime.datetime.now())])
+        writer.writerow([OPNO])
+        writer.writerow(['通过机况消除弹窗'])
+        writer.writerow([str(short_time)])
+    print(f"报警清除：{machine}")
+
 root = tk.Tk()
 root.title("小程序报警机况")
-root.geometry("1000x500")
-root.resizable(False, False)  # 禁用窗口大小调整
+root.geometry("880x500")
+root.resizable(False, False)
 
-# 读取配置
 config = load_config()
-
-# 创建分窗口区域（3行3列）
 windows = []
-for i, window_config in enumerate(config['windows']):
-    frame = tk.LabelFrame(root,width=25,height=8,)
-    frame = tk.Text(root, width=25, height=8, wrap="word", bg=window_config['bg_color'])
-    frame.insert(tk.END, "\n".join(window_config['text']))  # 显示多行内容
-    frame.config(state="disabled")  # 禁用编辑
-    frame.grid(row=i // 3, column=i % 3, padx=10, pady=10)
-    frame.bind("<Button-1>", lambda e: auth_popup())  # 单击事件绑定
-    windows.append(frame)
 
-# 创建刷新按钮
-refresh_button = tk.Button(root, text="刷新", command=refresh_display)
-refresh_button.grid(row=3, column=1, pady=20)
+# for i, window_config in enumerate(config['windows']):
+#     # 创建LabelFrame并设置大小一致
+#     chuangkou = window_config['text']
+#     title = chuangkou[0].split(':')
+#     frame = tk.LabelFrame(root, text=title[1], padx=5, pady=5, bg=window_config['bg_color'], width=300, height=150, font=("微软雅黑", 12))
+#     frame.grid(row=i // 3, column=i % 3, padx=10, pady=10)
 
-# 创建图例
+#     # 设置背景色和文本
+#     label = tk.Label(frame, text="\n".join(window_config['text']), bg=window_config['bg_color'], font=("Arial", 10), width=25, height=5,justify='left',anchor='w')
+#     label.pack(expand=True)
+
+#     def show_menu(event, machine=title[1].strip(), index=i, color = config['windows'][i]['bg_color'], error_time = config['windows'][i]['text'][4]):
+#         menu = Menu(root, tearoff=0)
+#         menu.add_command(label="具体内容", command=lambda: show_details(machine, index))
+#         menu.add_command(label="消除报警", command=lambda: auth_popup(machine, color,error_time))
+#         menu.post(event.x_root, event.y_root)
+
+#     frame.bind("<Button-3>", show_menu)
+#     label.bind("<Button-3>", show_menu)
+#     windows.append(frame)
+
+
+# 刷新按钮
+refresh_button = tk.Button(root, text="刷新", command=refresh_display, width="10", font=('微软雅黑', 14))
+refresh_button.place(relx=0.5, rely=0.95, anchor='center')
+
+# 显示刷新时间
+refresh_time_laabel = tk.Label(root, text="刷新时间： 未刷新", font=('微软雅黑', 11))
+refresh_time_laabel.place(relx=0.25, rely=0.95, anchor='center')
+
+# 图例部分
 legend_frame = tk.Frame(root)
 legend_frame.grid(row=1, column=4, sticky="n")
-
 tk.Label(legend_frame, text="图例:", font=("Arial", 12, "bold")).grid(row=0, column=0, columnspan=2, pady=5)
+
 for i, (color, description) in enumerate(config["legend"].items()):
-    color_label = tk.Label(legend_frame, text="    ", bg=color, width=4, height=1)
+    color_label = tk.Label(legend_frame, text=" ", bg=color, width=4, height=1)
     color_label.grid(row=i + 1, column=0, padx=5, pady=5)
-    text_label = tk.Label(legend_frame, text=description)
+    text_label = tk.Label(legend_frame, text=description,justify='left',anchor='w')
     text_label.grid(row=i + 1, column=1, padx=5, pady=5)
+
+#开启刷新一次
+refresh_display()
+
+#初始化刷新时间
+update_refresh_time()
+
+#设置自动刷新
+schedule_auto_refresh()
 
 root.mainloop()
